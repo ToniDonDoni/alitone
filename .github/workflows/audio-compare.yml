@@ -1,0 +1,56 @@
+name: Render and compare march audio
+
+on:
+  push:
+    branches:
+      - march-of-the-fallen
+    paths:
+      - ".github/workflows/audio-compare.yml"
+      - "tools/compare_rendered_audio.py"
+      - "src/**"
+      - "references/**"
+      - "tools/check_browser.mjs"
+      - "tools/check_tone_page.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect browser and audio tools
+        run: |
+          node --version
+          python3 --version
+          ffmpeg -version | head -n 1
+          command -v google-chrome
+      - name: Install analysis dependencies
+        run: python3 -m pip install numpy scipy matplotlib
+      - name: Check revised page and export PCM
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tools/check_browser.mjs --render
+      - name: Check Tone.js page and export PCM
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tools/check_tone_page.mjs
+      - name: Rebuild embedded page and verify provenance
+        run: |
+          python3 tools/build_tone_page.py
+          git diff --exit-code -- references/march-of-the-fallen-tone.html
+      - name: Rendered audio analysis
+        run: python3 tools/compare_rendered_audio.py
+      - name: Upload PCM and figures even if comparison fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: march-revised-tone-audio
+          path: |
+            output/renders/*.f32
+            output/analysis/*
+          if-no-files-found: warn
+          retention-days: 7
