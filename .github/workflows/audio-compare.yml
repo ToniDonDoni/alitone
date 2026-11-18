@@ -30,6 +30,8 @@ jobs:
           command -v google-chrome
       - name: Install analysis dependencies
         run: python3 -m pip install numpy scipy matplotlib
+      - name: Create output directories
+        run: mkdir -p output/renders output/analysis
       - name: Check revised page and export PCM
         env:
           CHROME_PATH: /usr/bin/google-chrome
