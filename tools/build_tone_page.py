@@ -5,6 +5,7 @@ TEMPLATE = ROOT / "src" / "page-template.html"
 BUNDLE = ROOT / "src" / "vendor" / "Tone-15.1.22.js"
 LICENSE = ROOT / "src" / "vendor" / "Tone-15.1.22.LICENSE.txt"
 SOURCE = ROOT / "src" / "march-tone.js"
+INSTRUMENTS = ROOT / "src" / "instruments.js"
 OUTPUT = ROOT / "references" / "march-of-the-fallen-tone.html"
 
 
@@ -14,6 +15,7 @@ def main():
     html = html.replace("<!-- LICENSE_BLOCK -->", "<!--\n" + license_text + "\n-->")
     bundle = BUNDLE.read_text().replace("\n//# sourceMappingURL=Tone.js.map", "")
     html = html.replace("/* TONE_BUNDLE */", bundle)
+    html = html.replace("/* INSTRUMENTS_SOURCE */", INSTRUMENTS.read_text())
     html = html.replace("/* MARCH_SOURCE */", SOURCE.read_text())
     OUTPUT.write_text(html)
     print("Built " + str(OUTPUT) + " from the vendored Tone.js bundle and project source.")

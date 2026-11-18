@@ -3,6 +3,8 @@
   "use strict";
 
   const T = window.Tone;
+  const I = window.MarchInstruments;
+  if (!I) throw new Error("MarchInstruments must be loaded before march-tone.js");
   const QUARTER_NOTES_PER_BAR = 2;
   const BARS_PER_PHRASE = 16;
   const BASS_ACCENTS = new Set([1, 4, 7, 9]);
@@ -73,7 +75,7 @@
     const panners = {};
     const instruments = {};
 
-    instruments.kick = new T.MembraneSynth({
+    instruments.kick = new I.Kick({
       pitchDecay: PATCHES.kick.pitchDecay,
       octaves: PATCHES.kick.octaveMultiplier,
       oscillator: {type: "sine"},
@@ -82,7 +84,7 @@
     instruments.kick.volume.value = -4;
     attach(instruments.kick, buses.drums, -1, 0, routes, panners, "kick");
 
-    instruments.beater = new T.NoiseSynth({
+    instruments.beater = new I.Beater({
       noise: {type: "white"},
       envelope: {attack: 0.001, decay: PATCHES.kick.noiseDecay, sustain: 0, release: 0.006}
     });
@@ -94,7 +96,7 @@
       routes.push(filter);
     }
 
-    instruments.kickBody = new T.NoiseSynth({
+    instruments.kickBody = new I.KickBody({
       noise: {type: "white"},
       envelope: {attack: 0.001, decay: PATCHES.kick.bodyDecay, sustain: 0, release: 0.01}
     });
@@ -103,13 +105,13 @@
     attach(kickBodyFilter, buses.drums, PATCHES.kick.bodyTrimDb, 0, routes);
     routes.push(kickBodyFilter);
 
-    instruments.shell = new T.Oscillator(PATCHES.kick.shellStartHz, "sine");
+    instruments.shell = new I.Shell(PATCHES.kick.shellStartHz, "sine");
     instruments.shellGain = new T.Gain(0.0001);
     instruments.shell.connect(instruments.shellGain);
     attach(instruments.shellGain, buses.drums, -0.5, 0, routes, panners, "shell");
     instruments.shell.start();
 
-    instruments.tom = new T.MembraneSynth({
+    instruments.tom = new I.Tom({
       pitchDecay: PATCHES.tom.pitchDecay,
       octaves: PATCHES.tom.octaveMultiplier,
       oscillator: {type: "sine"},
@@ -117,7 +119,7 @@
     });
     attach(instruments.tom, buses.drums, PATCHES.tom.trimDb + 2, 0, routes, panners, "tom");
 
-    instruments.snare = new T.NoiseSynth({
+    instruments.snare = new I.Snare({
       noise: {type: "white"},
       envelope: {attack: PATCHES.snare.attack, decay: PATCHES.snare.decay, sustain: 0, release: 0.012}
     });
@@ -128,11 +130,11 @@
       attach(filter, buses.drums, index === 0 ? 1.5 : -0.5, index === 0 ? 0.08 : -0.08, routes);
       routes.push(filter);
     }
-    const snareBody = new T.MembraneSynth({pitchDecay: 0.012, octaves: 1.35, oscillator: {type: "sine"}, envelope: {attack: 0.001, decay: 0.045, sustain: 0, release: 0.01}});
+    const snareBody = new I.SnareBody({pitchDecay: 0.012, octaves: 1.35, oscillator: {type: "sine"}, envelope: {attack: 0.001, decay: 0.045, sustain: 0, release: 0.01}});
     instruments.snareBody = snareBody;
     attach(snareBody, buses.drums, 8, 0, routes, panners, "snareBody");
 
-    instruments.roll = new T.NoiseSynth({
+    instruments.roll = new I.SnareRoll({
       noise: {type: "white"},
       envelope: {attack: PATCHES.snare.rollAttack, decay: PATCHES.snare.rollDecay, sustain: PATCHES.snare.rollSustain, release: 0.09}
     });
@@ -144,7 +146,7 @@
       routes.push(filter);
     }
 
-    instruments.sub = new T.MonoSynth({
+    instruments.sub = new I.SubBass({
       oscillator: {type: "sine"},
       filter: {type: "lowpass", frequency: PATCHES.sub.filterHz, Q: 0.7},
       filterEnvelope: {attack: 0.02, decay: 0.13, sustain: 0.18, release: 0.08, baseFrequency: 95, octaves: 0.65},
@@ -154,7 +156,7 @@
     instruments.sub.volume.value = -3;
     attach(instruments.sub, buses.bass, -2, 0, routes, panners, "sub");
 
-    instruments.brass = new T.FMSynth({
+    instruments.brass = new I.LowBrass({
       harmonicity: PATCHES.brass.harmonicity,
       modulationIndex: PATCHES.brass.modulationIndex,
       oscillator: {type: "sine"},
@@ -167,7 +169,7 @@
     attach(brassFilter, buses.brass, PATCHES.brass.trimDb, 0, routes, panners, "brass");
     routes.push(brassFilter);
 
-    instruments.metal = new T.MetalSynth({
+    instruments.metal = new I.MetalAccent({
       frequency: PATCHES.metal.frequency,
       harmonicity: 5,
       modulationIndex: PATCHES.metal.modulationIndex,
@@ -180,7 +182,7 @@
     attach(metalFilter, buses.textures, -19, 0.12, routes, panners, "metal");
     routes.push(metalFilter);
 
-    instruments.rumble = new T.NoiseSynth({
+    instruments.rumble = new I.Rumble({
       noise: {type: "brown"},
       envelope: {attack: 0.24, decay: 0.3, sustain: 0.55, release: 0.65}
     });

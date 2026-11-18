@@ -75,6 +75,7 @@ try {
   await call("Emulation.setDeviceMetricsOverride", {width: 1200, height: 820, deviceScaleFactor: 1, mobile: false});
   await call("Page.navigate", {url: pathToFileURL(path.join(root, "references", "march-of-the-fallen-tone.html")).href});
   for (let index = 0; index < 100 && !(await evaluate("Boolean(window.MarchLab)")); index++) await delay(50);
+  await requireCondition("Boolean(window.MarchInstruments) && Object.keys(MarchInstruments).length === 12 && MarchInstruments.Kick.prototype instanceof Tone.MembraneSynth && MarchInstruments.Beater.prototype instanceof Tone.NoiseSynth && MarchInstruments.SubBass.prototype instanceof Tone.MonoSynth && MarchInstruments.LowBrass.prototype instanceof Tone.FMSynth && MarchInstruments.MetalAccent.prototype instanceof Tone.MetalSynth");
   await requireCondition("Boolean(MarchLab) && MarchLab.version === 'Tone.js 15.1.22' && Tone.version === '15.1.22' && Tone.MembraneSynth && Tone.NoiseSynth && Tone.MonoSynth && Tone.FMSynth && Tone.MetalSynth && Tone.Oscillator");
   await requireCondition("tempo.type === 'range' && tempo.min === '40' && tempo.max === '160' && tempo.value === '80' && document.querySelector('#tempo-value').value === '80 BPM' && document.documentElement.scrollWidth === 1200");
   const preview = await call("Page.captureScreenshot", {format: "png"});

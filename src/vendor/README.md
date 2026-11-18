@@ -7,3 +7,4 @@ This folder contains the compiled Tone.js file that the page builder embeds into
 - `BUILD.md` records the source commit and how the bundle was produced.
 
 The bundle lets the generated page run locally without downloading Tone.js. For its provenance, see [`BUILD.md`](BUILD.md).
+- `SOURCE.md` explains the original TypeScript sources, local instrument adapters, and source-only build.

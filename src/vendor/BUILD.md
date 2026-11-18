@@ -5,3 +5,11 @@
 Upstream source tag: `15.1.22`, commit `d2d52ffa8803b35debd9f19f2da08ad1c3540de0`.
 
 The upstream MIT notice is embedded in the standalone page and also included in `Tone-15.1.22.LICENSE.txt`.
+## Rebuilding from the upstream TypeScript sources
+
+`tools/build_tone_bundle.py` reconstructs the browser bundle from the
+pinned Git submodule using upstream's `ts:build` and `webpack:build` scripts,
+without installing the Tone.js library from npm. It works in a temporary copy
+and leaves the upstream sources untouched. See `src/vendor/SOURCE.md`.
+After rebuilding the bundle, regenerate the HTML with
+`python3 tools/build_tone_page.py`.
