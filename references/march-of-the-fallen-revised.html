@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#131416">
+<title>March of the Fallen</title>
+<style>
+  :root {
+    color-scheme: dark;
+    font-family: system-ui, -apple-system, sans-serif;
+    color: #f1eee6;
+    background: #131416;
+    --dim: #b4afa6;
+    --line: #3f3e3e;
+    --accent: #ff815e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    min-height: 100svh;
+    margin: 0;
+    display: grid;
+    place-items: center;
+    padding: clamp(18px, 5vw, 64px);
+    background: radial-gradient(ellipse at 80% 6%, #292326, transparent 55%), #131416;
+  }
+  main { width: min(100%, 860px); }
+  header { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 27px; }
+  h1 {
+    max-width: 670px;
+    margin: 0;
+    font-family: Impact, "Arial Narrow", "Roboto Condensed", sans-serif;
+    font-stretch: condensed;
+    font-weight: 700;
+    font-size: clamp(2.2rem, 9vw, 5.9rem);
+    line-height: .94;
+    letter-spacing: -.035em;
+    text-transform: uppercase;
+  }
+  .meter, output { font-variant-numeric: tabular-nums; }
+  .meter { color: var(--accent); font-size: 1.2rem; white-space: nowrap; }
+  .deck { border: 1px solid var(--line); background: #191a1c; }
+  .display { position: relative; border-bottom: 1px solid var(--line); background: #101113; }
+  canvas { display: block; width: 100%; height: clamp(130px, 28vw, 298px); }
+  .display footer {
+    position: absolute; inset: auto 18px 15px; display: flex; justify-content: space-between; gap: 12px;
+    color: var(--dim); font-size: .875rem;
+  }
+  .steps { display: inline-flex; align-items: center; gap: 7px; }
+  .step { width: 13px; height: 4px; background: #575253; }
+  .step.active { background: var(--accent); box-shadow: 0 0 12px #ff815e6e; }
+  .controls {
+    display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 20px 28px;
+    padding: clamp(16px, 3vw, 25px);
+  }
+  .controls[hidden] { display: none; }
+  button {
+    font: inherit; font-weight: 650; min-height: 48px; border: 1px solid var(--line); border-radius: 3px;
+  }
+  button { appearance: none; cursor: pointer; padding: 0 20px; background: var(--accent); color: #201613; }
+  button:hover { background: #ff9d83; }
+  button:disabled { opacity: .64; cursor: progress; }
+  :is(button, input):focus-visible { outline: 2px solid #ffe5dc; outline-offset: 4px; }
+  .settings {
+    display: flex; align-items: center; justify-content: end; flex-wrap: wrap; gap: 12px 23px;
+  }
+  .slider { display: flex; align-items: center; gap: 10px; color: var(--dim); font-size: .9rem; }
+  .slider input { min-width: 0; min-height: 32px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+  .tempo input { width: clamp(84px, 13vw, 142px); }
+  .tempo output { min-width: 8ch; color: #f1eee6; text-align: right; white-space: nowrap; }
+  .volume input { width: clamp(62px, 10vw, 116px); }
+  @media (max-width: 760px) {
+    .controls { grid-template-columns: 1fr; gap: 14px; }
+    .settings { justify-content: space-between; }
+  }
+  @media (max-width: 510px) {
+    header { align-items: start; }
+    .settings { display: grid; grid-template-columns: 1fr; gap: 6px; }
+    .slider input { width: 0; flex: 1; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>March of<br>the Fallen</h1>
+    <span class="meter" aria-label="Размер две четверти">2/4</span>
+  </header>
+  <section class="deck" aria-label="Процедурный марш">
+    <div class="display">
+      <canvas id="scope" aria-hidden="true"></canvas>
+      <footer>
+        <span id="status" role="status">Для звука откройте этот HTML в Chrome или Safari.</span>
+        <span class="steps" aria-hidden="true"><i class="step"></i><i class="step"></i></span>
+      </footer>
+    </div>
+    <div id="controls" class="controls" hidden>
+      <button id="transport" type="button" aria-pressed="false">Запустить марш</button>
+      <div class="settings">
+        <label class="slider tempo">
+          Темп
+          <input id="tempo" type="range" min="40" max="160" step="1" value="80" aria-valuetext="80 BPM">
+          <output id="tempo-value" for="tempo" aria-hidden="true">80 BPM</output>
+        </label>
+        <label class="slider volume">Громкость <input id="volume" type="range" min="0" max="100" value="74"></label>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+"use strict";
+
+const TAU = Math.PI * 2;
+const midiToHz = note => 440 * 2 ** ((note - 69) / 12);
+
+function randomGenerator(seed) {
+  return () => {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return (seed >>> 0) / 4294967296;
+  };
+}
+
+function onePole(frequency, rate) {
+  const alpha = 1 - Math.exp(-TAU * frequency / rate);
+  let state = 0;
+  return value => {
+    state += alpha * (value - state);
+    return state;
+  };
+}
+
+function sampleBuffer(context, seconds, seed, sample) {
+  const rate = context.sampleRate;
+  const length = Math.round(seconds * rate);
+  const buffer = context.createBuffer(1, length, rate);
+  const data = buffer.getChannelData(0);
+  const random = randomGenerator(seed);
+  for (let i = 0; i < length; i++) {
+    const t = i / rate;
+    const fade = Math.min(1, t / .003, (length - i - 1) / (rate * .018));
+    data[i] = sample(t, random() * 2 - 1, i) * fade;
+  }
+  return buffer;
+}
+
+function bandPass(frequency, q, rate) {
+  const omega = TAU * frequency / rate;
+  const alpha = Math.sin(omega) / (2 * q);
+  const gain = alpha / (1 + alpha);
+  const a1 = 2 * Math.cos(omega) / (1 + alpha);
+  const a2 = (1 - alpha) / (1 + alpha);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  return input => {
+    const output = gain * (input - x2) + a1 * y1 - a2 * y2;
+    x2 = x1;
+    x1 = input;
+    y2 = y1;
+    y1 = output;
+    return output;
+  };
+}
+
+function kick(context, seed) {
+  const rate = context.sampleRate;
+  const tuning = .975 + .05 * randomGenerator(seed)();
+  const head = bandPass(720, .95, rate);
+  const edge = bandPass(1880, 1.25, rate);
+  let phase = 0;
+  const body = bandPass(193, 1.15, rate);
+  return sampleBuffer(context, .15, seed, (t, noise) => {
+    phase += TAU * tuning * (33 + 177 * Math.exp(-t / .023)) / rate;
+    const skin = .88 * Math.sin(phase) * Math.exp(-t / .060);
+    const beater = (2.1 * head(noise) + 1.7 * edge(noise)) * Math.exp(-t / .014);
+    const rim = (.39 * Math.sin(phase * 1.86 + .7) + 3.4 * body(noise)) * Math.exp(-t / .047);
+    return Math.tanh(skin + rim + 1.19 * beater);
+  });
+}
+
+function shell(context, beat, seed) {
+  const rate = context.sampleRate;
+  const tuning = .981 + .038 * randomGenerator(seed)();
+  let phase = 0;
+  return sampleBuffer(context, beat * .84, seed, t => {
+    const frequency = (59 - 23 * Math.exp(-t / .17)) * tuning;
+    phase += TAU * frequency / rate;
+    const bloom = (1 - Math.exp(-t / .037)) * Math.exp(-t / (beat * .48));
+    const body = Math.sin(phase) + .13 * Math.sin(2 * phase + .72) * Math.exp(-t / .15);
+    return bloom * body * (1 + .18 * Math.sin(TAU * 4.8 * t));
+  });
+}
+
+function tom(context, seed) {
+  const rate = context.sampleRate;
+  const tuning = .94 + .12 * randomGenerator(seed)();
+  const head = bandPass(650, 1.1, rate);
+  let phase = 0;
+  return sampleBuffer(context, .31, seed, (t, noise) => {
+    phase += TAU * tuning * (68 + 50 * Math.exp(-t / .029)) / rate;
+    return .72 * Math.sin(phase) * Math.exp(-t / .094)
+      + .72 * head(noise) * Math.exp(-t / .022);
+  });
+}
+
+function wireRoll(context, length, seed) {
+  const rate = context.sampleRate;
+  const throat = bandPass(705, 1.15, rate);
+  const wires = bandPass(1690, 1.35, rate);
+  return sampleBuffer(context, length, seed, (t, noise) => {
+    const swell = .24 + .76 * (t / length) ** 1.55;
+    const strokes = .50 + .50 * Math.cos(TAU * 18 * t + .6 * Math.sin(37 * t)) ** 2;
+    return (2.2 * throat(noise) + 1.35 * wires(noise)) * swell * strokes;
+  });
+}
+
+function snare(context, seed) {
+  const rate = context.sampleRate;
+  const mixLow = onePole(360, rate);
+  const mixMid = onePole(1240, rate);
+  const mixHigh = onePole(2810, rate);
+  const damping = onePole(2850, rate);
+  const cloth = onePole(3200, rate);
+  return sampleBuffer(context, .27, seed, (t, noise) => {
+    const low = mixLow(noise);
+    const mid = mixMid(noise);
+    const high = mixHigh(noise);
+    const body = .28 * Math.sin(TAU * (150 * t + 2.6 * (1 - Math.exp(-t / .040)))) * Math.exp(-t / .043);
+    const wires = (.45 * Math.sin(TAU * 583 * t) + .29 * Math.sin(TAU * 1038 * t) +
+                   .17 * Math.sin(TAU * 1841 * t) + .13 * Math.sin(TAU * 2487 * t)) * Math.exp(-t / .034);
+    const trail = Math.exp(-t / .034);
+    const ensemble = 1 + .36 * Math.exp(-((t - .014) ** 2) / .000035)
+                       + .22 * Math.exp(-((t - .028) ** 2) / .000055);
+    const noiseBand = damping(cloth((mid - low) * 2.4 + (high - mid) * 1.75));
+    return Math.tanh((body + wires + noiseBand * trail * ensemble) * 1.12);
+  });
+}
+
+function metal(context, seed) {
+  const shell = [326, 522, 916, 1564, 2442];
+  const filtered = onePole(3900, context.sampleRate);
+  return sampleBuffer(context, .38, seed, (t, noise) => {
+    let modes = 0;
+    for (let i = 0; i < shell.length; i++) {
+      modes += Math.sin(TAU * shell[i] * t + i) * Math.exp(-t * (13 + i * 4)) / (1.8 + i * .75);
+    }
+    return .89 * modes + .33 * filtered(noise) * Math.exp(-t / .031);
+  });
+}
+
+function bass(context, note, length, seed) {
+  const rate = context.sampleRate;
+  const frequency = midiToHz(note);
+  const sustained = note === 36;
+  let phase = 0;
+  return sampleBuffer(context, length + .125, seed, t => {
+    const attack = 1 - Math.exp(-t / (sustained ? .11 : .066));
+    const release = Math.exp(-Math.max(0, t - length) / .048);
+    const scoop = sustained ? .012 : .18;
+    phase += TAU * frequency * (1 + scoop * Math.exp(-t / .10) + .002 * Math.sin(TAU * 2.1 * t)) / rate;
+    return attack * release * Math.tanh(1.08 * Math.sin(phase) + .12 * Math.sin(2 * phase + .6));
+  });
+}
+
+function brass(context, note, length, seed) {
+  const rate = context.sampleRate;
+  const frequency = midiToHz(note);
+  const dark = onePole(680, rate);
+  const wind = onePole(1250, rate);
+  const partials = [.65, .45, .30, .17, .10, .07, .04, .022];
+  let phase = 0;
+  let otherPhase = 0;
+  return sampleBuffer(context, length + .18, seed, (t, noise) => {
+    phase += TAU * frequency * (1 - .024 * Math.exp(-t / .038) + .003 * Math.sin(25 * t)) / rate;
+    otherPhase += TAU * frequency * (1.012 + .0025 * Math.sin(17 * t)) / rate;
+    const attack = (1 - Math.exp(-t / .039)) ** 1.35;
+    const swell = .71 + .29 * Math.exp(-((t - .12) ** 2) / .015);
+    const release = Math.exp(-Math.max(0, t - length + .037) / .056);
+    let tone = 0;
+    for (let i = 0; i < partials.length; i++) {
+      tone += partials[i] * (.73 * Math.sin((i + 1) * phase + i * .09) +
+                              .27 * Math.sin((i + 1) * otherPhase + i * .4));
+    }
+    return dark(Math.tanh(tone * 1.8) + .20 * wind(noise)) * attack * swell * release;
+  });
+}
+
+function rumble(context, seed) {
+  const slow = onePole(38, context.sampleRate);
+  const upper = onePole(95, context.sampleRate);
+  return sampleBuffer(context, 2.4, seed, (t, noise) => {
+    const shape = Math.sin(Math.PI * t / 2.4) ** 2;
+    return shape * (2 * (upper(noise) - slow(noise)) +
+      .23 * Math.sin(TAU * (33.1 * t + .21 * Math.sin(8.1 * t))) *
+      (.70 + .30 * Math.sin(8.3 * t)));
+  });
+}
+
+// Two steps per bar. Accents repeat across the bar line.
+const bassAccents = [1, 4, 7, 9];
+
+class March {
+  constructor(context, bpm, output) {
+    this.context = context;
+    this.voices = new Map();
+    this.setTempo(bpm);
+    this.fade = context.createGain();
+    this.fade.connect(output);
+    const room = context.createBiquadFilter();
+    room.type = "bandpass";
+    room.frequency.value = 980;
+    room.Q.value = .5;
+    this.fade.connect(room);
+    for (const [delayTime, level, pan] of [[.018, .26, -.88], [.032, .23, .9], [.057, .11, -.65]]) {
+      const delay = context.createDelay(.1);
+      const gain = context.createGain();
+      const stereo = context.createStereoPanner();
+      delay.delayTime.value = delayTime;
+      gain.gain.value = level;
+      stereo.pan.value = pan;
+      room.connect(delay).connect(gain).connect(stereo).connect(output);
+    }
+    this.kicks = [2619, 3851, 4891, 8431].map(seed => kick(context, seed));
+    this.toms = [1531, 3217, 8951].map(seed => tom(context, seed));
+    this.snares = [5279, 6521, 9349].map(seed => snare(context, seed));
+    this.metal = [1237, 6091].map(seed => metal(context, seed));
+    this.rumble = [1583, 2693].map(seed => rumble(context, seed));
+  }
+
+  setTempo(bpm) {
+    if (this.bpm === bpm) return;
+    this.bpm = bpm;
+    this.beat = 60 / bpm;
+    this.step = this.beat / 4;
+    this.barDuration = this.beat * 2;
+    this.voices.clear();
+    this.shells = [2579, 6247, 8293].map(seed => shell(this.context, this.beat, seed));
+    this.rolls = [1051, 7039, 9181].map(seed => wireRoll(this.context, this.beat * .84, seed));
+  }
+
+  play(buffer, at, level, pan, bus) {
+    const source = this.context.createBufferSource();
+    const gain = this.context.createGain();
+    const stereo = this.context.createStereoPanner();
+    source.buffer = buffer;
+    gain.gain.value = level;
+    stereo.pan.value = pan;
+    source.connect(gain).connect(stereo).connect(bus);
+    source.onended = () => {
+      source.disconnect();
+      gain.disconnect();
+      stereo.disconnect();
+    };
+    source.start(at);
+  }
+
+  note(kind, note, duration) {
+    const key = [kind, note, duration].join("/");
+    if (!this.voices.has(key)) {
+      const make = kind === "sub" ? bass : brass;
+      this.voices.set(key, make(this.context, note, duration * this.step, note * 4153));
+    }
+    return this.voices.get(key);
+  }
+
+  scheduleBar(index, time) {
+    const bar = index % 16;
+    const pedal = bar >= 8;
+    const random = randomGenerator(Math.imul(index + 1, 2654435761));
+    const choose = buffers => buffers[Math.floor(random() * buffers.length)];
+    const hit = (buffer, step, level, pan, lag = 0) => {
+      this.play(buffer, time + step * this.step + lag, level * (.97 + .06 * random()), pan, this.fade);
+    };
+
+    for (let foot = 0; foot < 2; foot++) {
+      const step = foot * 4;
+      const accented = bassAccents.includes(bar * 2 + foot);
+      const side = foot === 0 ? -.16 : .16;
+      const weight = pedal ? .68 : (foot === 0 ? 1.14 : .98);
+      hit(choose(this.kicks), step, weight, side * .25);
+      hit(choose(this.shells), step, weight * .88, 0, .052);
+      hit(choose(this.snares), step, weight * .36, side);
+      hit(choose(this.snares), step, weight * .12, -side * 2, .012);
+      hit(choose(this.rolls), step + .68, pedal ? .25 : .42, -side * 1.65);
+      if (accented || (pedal && foot === 0)) {
+        hit(choose(this.metal), step, pedal ? .086 : .13, side * 1.7, .015);
+      }
+      if (!pedal) {
+        if (!accented && foot === 0) hit(choose(this.toms), step + 1.04, .38, -side);
+        hit(this.note("sub", 34, accented ? 2.62 : 2.20), step + 1.18, accented ? .66 : .18, 0);
+        if (accented) hit(this.note("low", 34, 2.4), step + 1.33, .12, side);
+      }
+    }
+
+    if (pedal) {
+      const swell = .48 + .10 * Math.sin((bar - 8) * .42);
+      hit(this.note("sub", 36, 7.85), 0, swell, 0);
+      hit(this.note("low", 36, bar % 2 ? 3.8 : 3.2), bar % 2 ? 2.2 : .85, .147, -.15);
+      if (bar % 4 === 3) hit(this.note("low", 35, 1.35), 6, .079, .18);
+    }
+    if (index % 2 === 0) hit(this.rumble[index % 4 / 2], 0, .17, .04);
+    if (bar % 4 === 1 || bar % 4 === 3) {
+      hit(choose(this.toms), 6.89, .36, .22);
+      hit(choose(this.snares), 7.5, .09, -.24);
+    }
+  }
+}
+
+function createMaster(context, destination) {
+  const lowPass = context.createBiquadFilter();
+  lowPass.type = "lowpass";
+  lowPass.frequency.value = 2930;
+  lowPass.Q.value = .71;
+  const limiter = context.createDynamicsCompressor();
+  const edge = context.createBiquadFilter();
+  edge.type = "lowpass";
+  edge.frequency.value = 3510;
+  edge.Q.value = .71;
+  lowPass.connect(edge).connect(limiter);
+  limiter.threshold.value = -7.8;
+  limiter.knee.value = 10;
+  limiter.ratio.value = 3;
+  limiter.attack.value = .003;
+  limiter.release.value = .135;
+  const trim = context.createGain();
+  trim.gain.value = 1.02;
+  const peakGuard = context.createWaveShaper();
+  peakGuard.curve = Float32Array.from({ length: 2049 }, (_, i) => {
+    const x = i / 1024 - 1;
+    const level = Math.abs(x);
+    return level <= .79 ? x : Math.sign(x) * (.79 + .19 * Math.tanh((level - .79) / .19));
+  });
+  limiter.connect(trim).connect(peakGuard).connect(destination);
+  return lowPass;
+}
+
+const button = document.querySelector("#transport");
+const status = document.querySelector("#status");
+const controls = document.querySelector("#controls");
+const tempo = document.querySelector("#tempo");
+const tempoValue = document.querySelector("#tempo-value");
+const volumeControl = document.querySelector("#volume");
+const scope = document.querySelector("#scope");
+const steps = [...document.querySelectorAll(".step")];
+const drawing = scope.getContext("2d");
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const scheduledBars = [];
+const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+
+let context;
+let master;
+let volume;
+let analyser;
+let march = null;
+let clock = 0;
+let nextBarTime = 0;
+let nextBar = 0;
+let samples;
+let frame;
+let transitioning = false;
+
+function outputLevel() {
+  return (Number(volumeControl.value) / 100) ** 1.55;
+}
+
+function fillSchedule() {
+  if (!march || context.state !== "running") return;
+  const now = context.currentTime;
+  while (scheduledBars.length > 1 && scheduledBars[1].time <= now) scheduledBars.shift();
+  if (nextBarTime < now) {
+    const missedBars = Math.ceil((now - nextBarTime) / march.barDuration);
+    nextBar += missedBars;
+    nextBarTime += missedBars * march.barDuration;
+  }
+  if (nextBarTime >= now + .14) return;
+
+  // Keep the next bar's downbeat anchored to the end of the previous bar.
+  march.setTempo(tempo.valueAsNumber);
+  march.scheduleBar(nextBar, nextBarTime);
+  scheduledBars.push({time: nextBarTime, beat: march.beat});
+  nextBarTime += march.barDuration;
+  nextBar++;
+}
+
+function startMarch() {
+  march = new March(context, tempo.valueAsNumber, master);
+  scheduledBars.length = 0;
+  nextBarTime = context.currentTime + .065;
+  nextBar = 0;
+  fillSchedule();
+  clock = setInterval(fillSchedule, 45);
+}
+
+function stopMarch() {
+  clearInterval(clock);
+  scheduledBars.length = 0;
+  const old = march;
+  march = null;
+  const now = context.currentTime;
+  old.fade.gain.setValueAtTime(1, now);
+  old.fade.gain.linearRampToValueAtTime(0, now + .055);
+  setTimeout(() => old.fade.disconnect(), 90);
+}
+
+function setTransport(playing) {
+  button.textContent = playing ? "Остановить марш" : "Запустить марш";
+  button.setAttribute("aria-pressed", String(playing));
+  status.textContent = playing ? "Играет" : "Остановлено";
+}
+
+function onAudioState() {
+  if (!march) return;
+  status.textContent = context.state === "running" ? "Играет" : "Звук приостановлен браузером";
+}
+
+button.addEventListener("click", async () => {
+  if (transitioning) return;
+  if (march) {
+    stopMarch();
+    setTransport(false);
+    paint();
+    return;
+  }
+  transitioning = true;
+  button.disabled = true;
+  try {
+    if (!context) {
+      context = new AudioContextConstructor({ latencyHint: "playback" });
+      context.addEventListener("statechange", onAudioState);
+      volume = context.createGain();
+      volume.gain.value = outputLevel();
+      analyser = context.createAnalyser();
+      analyser.fftSize = 2048;
+      samples = new Float32Array(analyser.fftSize);
+      volume.connect(analyser).connect(context.destination);
+      master = createMaster(context, volume);
+    }
+    await context.resume();
+    startMarch();
+    setTransport(true);
+    paint();
+  } catch (error) {
+    if (march) stopMarch();
+    setTransport(false);
+    status.textContent = "Не удалось запустить звук. Попробуйте открыть HTML в Chrome или Safari.";
+    console.error(error);
+  } finally {
+    transitioning = false;
+    button.disabled = false;
+  }
+});
+
+function showTempo() {
+  const text = `${tempo.value} BPM`;
+  tempoValue.value = text;
+  tempo.setAttribute("aria-valuetext", text);
+}
+
+tempo.addEventListener("input", showTempo);
+showTempo();
+
+volumeControl.addEventListener("input", () => {
+  if (volume) volume.gain.setTargetAtTime(outputLevel(), context.currentTime, .035);
+});
+
+function paint() {
+  if (!drawing) return;
+  cancelAnimationFrame(frame);
+  const width = scope.clientWidth;
+  const height = scope.clientHeight;
+  const scale = Math.min(devicePixelRatio || 1, 2);
+  if (scope.width !== Math.round(width * scale) || scope.height !== Math.round(height * scale)) {
+    scope.width = Math.round(width * scale);
+    scope.height = Math.round(height * scale);
+  }
+  drawing.setTransform(scale, 0, 0, scale, 0, 0);
+  drawing.clearRect(0, 0, width, height);
+  drawing.strokeStyle = "#2e292c";
+  drawing.lineWidth = 1;
+  drawing.beginPath();
+  for (let i = 1; i < 16; i++) {
+    drawing.moveTo(width * i / 16, 0);
+    drawing.lineTo(width * i / 16, height);
+  }
+  for (let i = 1; i < 6; i++) {
+    drawing.moveTo(0, height * i / 6);
+    drawing.lineTo(width, height * i / 6);
+  }
+  drawing.stroke();
+  const now = context?.currentTime ?? 0;
+  const bar = scheduledBars[1]?.time <= now ? scheduledBars[1] : scheduledBars[0];
+  const elapsed = bar ? now - bar.time : -1;
+  const active = march && context.state === "running" && elapsed >= 0 && elapsed < 2 * bar.beat;
+  const beat = active ? Math.floor(elapsed / bar.beat) : -1;
+  for (const [index, light] of steps.entries()) light.classList.toggle("active", index === beat);
+  drawing.lineWidth = active ? 1.7 : 1;
+  drawing.strokeStyle = active ? "#ff815e" : "#77524b";
+  drawing.beginPath();
+  if (active && !reducedMotion.matches) {
+    analyser.getFloatTimeDomainData(samples);
+    for (let y = 0; y < samples.length; y += 4) {
+      const x = width * y / (samples.length - 4);
+      const amplitude = height * .48 - samples[y] * height * .74;
+      if (y === 0) drawing.moveTo(x, amplitude);
+      else drawing.lineTo(x, amplitude);
+    }
+  } else {
+    drawing.moveTo(0, height * .48);
+    drawing.lineTo(width, height * .48);
+  }
+  drawing.stroke();
+  if (march) frame = requestAnimationFrame(paint);
+}
+
+if (AudioContextConstructor) {
+  if (typeof ResizeObserver === "function") new ResizeObserver(paint).observe(scope);
+  else window.addEventListener("resize", paint);
+  paint();
+  controls.hidden = false;
+  status.textContent = "Готово к запуску";
+}
+</script>
+</body>
+</html>

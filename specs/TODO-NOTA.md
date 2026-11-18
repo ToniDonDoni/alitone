@@ -1,0 +1,18 @@
+# TODO: Try Nota as a DAW for the march
+
+**Status:** The version 0.60.3 Apple Silicon DMG was downloaded and inspected read-only. The application has not been installed or run. This is an optional DAW experiment alongside the browser music lab.
+
+## Trial
+
+1. Use an isolated macOS test VM with no shared host folders. On Apple Silicon, select the arm64 DMG from the official release and recheck the exact asset's SHA-256 against GitHub before opening it. Use the verified release in the initial trial.
+2. Start an empty project using only Nota's built-in instruments. Keep the optional phone remote and plugin downloads disabled, and enable local MCP only during the trial. Keep the client inside the VM for the first test.
+3. At 80 BPM in 2/4, create two bars with separate drum, sub-bass, and low-brass tracks. Add MIDI clips, inspect the synth parameters, change the drum attack and resonance, and check solo and mute. Render the master and per-track WAVs, then compare the first two bars against the existing MP3 at matched loudness.
+4. Observe network connections during startup and playback, and verify the servers that are listening before and after enabling MCP. Keep the browser implementation for the standalone procedural deliverable.
+
+## Compatibility and security findings
+
+- The tested Mac is Apple Silicon running macOS 15.6. The release supplies a native arm64 DMG and the project specifies macOS 13+. The SHA-256 of the checked DMG matched GitHub: `f6342f75c2b369717dc752d71727385358591070496fd6698c9a7754d49d3d48`. The disk image and bundle integrity verified. The app is ad hoc signed without Apple Developer ID. Gatekeeper rejected it. Keep Gatekeeper enabled on the host. [Official release](https://github.com/nota-daw/nota/releases/tag/v0.60.3) · [macOS packaging](https://github.com/nota-daw/nota/blob/v0.60.3/scripts/package-dmg.sh)
+- Source review confirmed MCP operations for tracks, MIDI, synth parameters, effects, mixer, transport, analysis, and audio export. Optional stem separation and audio-to-MIDI use separately installed local models. [MCP tools at the audited tag](https://github.com/nota-daw/nota/tree/v0.60.3/src/managed/Nota.Mcp/Tools)
+- MCP is off by default. It listens on loopback and has no application authentication. Other local processes can access the open project while MCP is enabled. Nota Remote is a separate, optional phone-control service that listens on all interfaces when enabled. [MCP server](https://github.com/nota-daw/nota/blob/v0.60.3/src/managed/Nota.Mcp/NotaMcpServer.cs) · [Remote server](https://github.com/nota-daw/nota/blob/v0.60.3/src/managed/Nota.Remote/RemoteServer.cs)
+- OSV matched six advisories to Vite 8.3.2, the only match across 99 queried package versions from the published .NET manifest and web lockfile. Vite builds Nota Remote's web assets. The shipped .NET server serves the embedded assets. The scan did not cover every native dependency, GUI behavior, live network traffic, or optional plugin. [Web build](https://github.com/nota-daw/nota/blob/v0.60.3/src/managed/Nota.Remote/Nota.Remote.csproj) · [Example Vite advisory](https://github.com/advisories/GHSA-vfpm-58rq-9qcg)
+- The updater checks for releases by default and requires user action to download. The update and plugin catalog code checks downloads against sizes and supplied digests. Verify plugin publishers independently before loading AU or VST3 binaries. [Updater](https://github.com/nota-daw/nota/blob/v0.60.3/src/managed/Nota.Infrastructure/Update/AppUpdater.cs) · [Plugin store](https://github.com/nota-daw/nota/blob/v0.60.3/src/managed/Nota.Infrastructure/PluginStore/PluginStore.cs)

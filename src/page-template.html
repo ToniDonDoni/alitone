@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#131416">
+<title>March of the Fallen — Tone.js</title>
+<style>
+  :root { color-scheme: dark; font-family: system-ui, -apple-system, sans-serif; color: #f1eee6; background: #131416; --dim: #b4afa6; --line: #3f3e3e; --accent: #ff815e; }
+  * { box-sizing: border-box; }
+  body { min-height: 100svh; margin: 0; display: grid; place-items: center; padding: clamp(18px, 5vw, 64px); background: radial-gradient(ellipse at 80% 6%, #292326, transparent 55%), #131416; }
+  main { width: min(100%, 980px); }
+  header { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 27px; }
+  h1 { max-width: 670px; margin: 0; font-family: Impact, "Arial Narrow", "Roboto Condensed", sans-serif; font-stretch: condensed; font-weight: 700; font-size: clamp(2.2rem, 9vw, 5.9rem); line-height: .94; letter-spacing: -.035em; text-transform: uppercase; }
+  .meter, output { font-variant-numeric: tabular-nums; }
+  .meter { color: var(--accent); font-size: 1.2rem; white-space: nowrap; }
+  .deck { border: 1px solid var(--line); background: #191a1c; }
+  .display { position: relative; border-bottom: 1px solid var(--line); background: #101113; }
+  canvas { display: block; width: 100%; height: clamp(150px, 31vw, 320px); }
+  .display footer { position: absolute; inset: auto 18px 15px; display: flex; justify-content: space-between; gap: 12px; color: var(--dim); font-size: .875rem; }
+  .beats { display: inline-flex; align-items: center; gap: 7px; }
+  .beat-light { width: 13px; height: 4px; background: #575253; }
+  .beat-light.active { background: var(--accent); box-shadow: 0 0 12px #ff815e6e; }
+  .controls { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 20px 28px; padding: clamp(16px, 3vw, 25px); }
+  button { appearance: none; cursor: pointer; font: inherit; font-weight: 650; min-height: 48px; border: 1px solid var(--line); border-radius: 3px; padding: 0 20px; background: var(--accent); color: #201613; }
+  button:hover { background: #ff9d83; }
+  button:disabled { opacity: .64; cursor: progress; }
+  :is(button, input):focus-visible { outline: 2px solid #ffe5dc; outline-offset: 4px; }
+  .settings { display: flex; align-items: center; justify-content: end; flex-wrap: wrap; gap: 12px 23px; }
+  .slider { display: flex; align-items: center; gap: 10px; color: var(--dim); font-size: .9rem; }
+  .slider input { min-width: 0; min-height: 32px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+  .tempo input { width: clamp(84px, 13vw, 142px); }
+  .tempo output { min-width: 8ch; color: #f1eee6; text-align: right; white-space: nowrap; }
+  .volume input { width: clamp(62px, 10vw, 116px); }
+  .engine { margin-top: 11px; color: #8e8985; font-size: .78rem; letter-spacing: .04em; }
+  @media (max-width: 760px) { .controls { grid-template-columns: 1fr; gap: 14px; } .settings { justify-content: space-between; } }
+  @media (max-width: 510px) { header { align-items: start; } .settings { display: grid; grid-template-columns: 1fr; gap: 6px; } .slider input { width: 0; flex: 1; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>March of<br>the Fallen</h1>
+    <span class="meter" aria-label="Размер две четверти">2/4</span>
+  </header>
+  <section class="deck" aria-label="Процедурный марш на Tone.js">
+    <div class="display">
+      <canvas id="scope" aria-hidden="true"></canvas>
+      <footer>
+        <span id="status" role="status">Готово к запуску</span>
+        <span class="beats" aria-hidden="true"><i class="beat-light"></i><i class="beat-light"></i></span>
+      </footer>
+    </div>
+    <div class="controls">
+      <button id="transport" type="button" aria-pressed="false">Запустить марш</button>
+      <div class="settings">
+        <label class="slider tempo">Темп <input id="tempo" type="range" min="40" max="160" step="1" value="80"><output id="tempo-value" for="tempo">80 BPM</output></label>
+        <label class="slider volume">Громкость <input id="volume" type="range" min="0" max="100" value="74"></label>
+      </div>
+    </div>
+  </section>
+  <p class="engine">Tone.js 15.1.22 · procedural instruments · offline playback</p>
+</main>
+<!-- LICENSE_BLOCK -->
+<script>/* TONE_BUNDLE */</script>
+<script>/* MARCH_SOURCE */</script>
+</body>
+</html>
