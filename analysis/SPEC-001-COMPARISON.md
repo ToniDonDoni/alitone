@@ -35,4 +35,4 @@ ffplay -f f32le -ar 48000 -ch_layout mono output/renders/revision-80-full.f32
 
 ## Tone.js port
 
-See [the Tone.js implementation results](TONEJS-IMPLEMENTATION.md) for the new standalone page, its 80/108 BPM renders, and the updated reference comparison.
+See [the Tone.js implementation results](SPEC-001-TONEJS-IMPLEMENTATION.md) for the new standalone page, its 80/108 BPM renders, and the updated reference comparison.

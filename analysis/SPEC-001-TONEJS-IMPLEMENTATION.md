@@ -34,7 +34,7 @@ Measurements use the opening 7.4 seconds and 80 BPM. The reference values are ta
 
 At 108 BPM the 520–4,000 Hz share is 6.98%, peak is 0.732, and boundary RMS is 0.196 / 0.198.
 
-The isolated 193 Hz kick-body voice is now in the Tone.js patch. The full-mix 95–520 Hz share remains low, so this first addition is an audible-design experiment rather than evidence that the band has been matched. See [the Revised-vs-Tone analysis](REVISED-VS-TONE.md) for before/after numbers and the next tuning suggestion.
+The isolated 193 Hz kick-body voice is now in the Tone.js patch. The full-mix 95–520 Hz share remains low, so this first addition is an audible-design experiment rather than evidence that the band has been matched. See [the Revised-vs-Tone analysis](SPEC-001-REVISED-VS-TONE.md) for before/after numbers and the next tuning suggestion.
 
 ## Reproduction
 

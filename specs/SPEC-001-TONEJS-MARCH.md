@@ -4,7 +4,7 @@
 
 - [SPEC-ORIGINAL.md](SPEC-ORIGINAL.md) defines a dark industrial military march in strict 2/4. Low percussion leads, followed by sub-bass and low brass. The original brief called for 108 BPM. The revised page defaults to 80 BPM, close to the opening pulse of the reference.
 - [march-of-the-fallen-revised.html](../references/march-of-the-fallen-revised.html) is the accepted starting point. It is a standalone Web Audio page with procedural voices and a 16-bar arrangement that repeats. An earlier version is also available for comparison.
-- [march_of_fallen.mp3](../references/march_of_fallen.mp3) is the listening reference. [The comparison notes](../analysis/COMPARISON.md) document the onset alignment, spectrum and envelopes. The first strong footfall has a short attack followed by a low resonance that rises from roughly 41 to 58 Hz over the measurement windows. The current page approaches that movement, with less energy at 95–520 Hz and a stronger snare-wire buildup before the next footfall.
+- [march_of_fallen.mp3](../references/march_of_fallen.mp3) is the listening reference. [The comparison notes](../analysis/SPEC-001-COMPARISON.md) document the onset alignment, spectrum and envelopes. The first strong footfall has a short attack followed by a low resonance that rises from roughly 41 to 58 Hz over the measurement windows. The current page approaches that movement, with less energy at 95–520 Hz and a stronger snare-wire buildup before the next footfall.
 - [Tone.js 15.1.22](../thirdparty/UPSTREAM-TONEJS.md) is available locally as a pinned Git submodule, with the matching published browser build documented.
 
 ## Desired state

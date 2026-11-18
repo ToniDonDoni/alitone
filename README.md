@@ -8,7 +8,7 @@ The current experiment is the [procedural Tone.js march](references/march-of-the
 
 ## Repo
 
-- `references/` — the source MP3 and pages used for listening comparisons; see [references/README.md](references/README.md).
+- `references/` — the source MP3 and pages used for listening comparisons.
 - `specs/` — the music brief, implementation spec, and project notes.
 - `analysis/` — audio measurements and comparison reports.
 - `src/` — source code, patches, and page template.
