@@ -216,7 +216,7 @@
       oscillator: {type: "sine"},
       envelope: {attack: PATCHES.kick.attack, decay: PATCHES.kick.decay, sustain: 0, release: 0.015}
     });
-    instruments.kick.volume.value = -4;
+    instruments.kick.volume.value = -1;
     attach(instruments.kick, buses.drums, -1, 0, routes, panners, "kick", voiceSolo, "kick");
 
     instruments.beater = new I.Beater({
@@ -314,6 +314,17 @@
     attach(brassFilter, buses.brass, PATCHES.brass.trimDb, 0, routes, panners, "brass", voiceSolo, "brass");
     routes.push(brassFilter);
 
+    // Tone.FMSynth supplies the breathy fundamental; a separate upstream Tone.Synth
+    // supplies the reference's 2nd-8th harmonics, absent with harmonicity=2 FM.
+    instruments.brassHarmonics = new T.Synth({
+      oscillator: {type: "custom", partials: [0, 0.45, 0.30, 0.17, 0.10, 0.07, 0.04, 0.022]},
+      envelope: {attack: 0.04, decay: 0.12, sustain: 0.65, release: 0.06}
+    });
+    const harmonicFilter = new T.Filter(PATCHES.brass.lowpassHz, "lowpass");
+    instruments.brassHarmonics.connect(harmonicFilter);
+    attach(harmonicFilter, buses.brass, -6, 0, routes, null, null, voiceSolo, "brass");
+    routes.push(harmonicFilter);
+
     instruments.metal = new I.MetalAccent({
       frequency: PATCHES.metal.frequency,
       harmonicity: 5,
@@ -369,7 +380,11 @@
       graph.instruments.metalMode.triggerAttackRelease(326, duration, time, clamp(velocity * variation, 0.02, 1));
     }
     else if (instrument === "sub") node.triggerAttackRelease(duration.note, duration.seconds, time, clamp(velocity * variation, 0.02, 1));
-    else if (instrument === "brass") node.triggerAttackRelease(duration.note, duration.seconds, time, clamp(velocity * variation, 0.02, 1));
+    else if (instrument === "brass") {
+      const level = clamp(velocity * variation, 0.02, 1);
+      node.triggerAttackRelease(duration.note, duration.seconds, time, level);
+      graph.instruments.brassHarmonics.triggerAttackRelease(duration.note, duration.seconds, time, level);
+    }
     if (graph.panners[instrument]) graph.panners[instrument].pan.setValueAtTime(pan, time);
   }
 
@@ -391,11 +406,18 @@
     harmonicAmp.setValueAtTime(0.0001, time);
     harmonicAmp.linearRampToValueAtTime(0.10 * velocity, time + PATCHES.kick.shellAttack);
     harmonicAmp.exponentialRampToValueAtTime(0.0001, time + 0.31);
+    // Match the rising shell's delayed bloom, long exponential tail and 4.8 Hz tremolo.
+    const duration = PATCHES.kick.shellFadeBeats * beat;
+    const ampCurve = Float32Array.from({length: 256}, (_, index) => {
+      const t = duration * index / 255;
+      const bloom = (1 - Math.exp(-t / 0.037)) * Math.exp(-t / (beat * 0.48));
+      const wobble = 1 + 0.18 * Math.sin(2 * Math.PI * 4.8 * t);
+      const fade = Math.max(0, Math.min(1, t / 0.003, (duration - t) / 0.018));
+      return Math.max(0.0001, 1.15 * velocity * bloom * wobble * fade);
+    });
     amp.cancelScheduledValues(time);
-    amp.setValueAtTime(0.0001, time);
-    amp.linearRampToValueAtTime(0.74 * velocity, time + PATCHES.kick.shellAttack);
-    amp.exponentialRampToValueAtTime(Math.max(0.0001, 0.74 * velocity * 0.24), time + PATCHES.kick.shellAttack + beat * PATCHES.kick.shellDecayBeats);
-    amp.exponentialRampToValueAtTime(0.0001, end);
+    amp.setValueCurveAtTime(ampCurve, time, duration);
+    amp.setValueAtTime(0.0001, end + 0.002);
   }
 
   function strikeRoll(graph, time, length, velocity, pan) {
