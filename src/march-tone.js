@@ -253,10 +253,10 @@
 
   function disposeGraph(graph) {
     for (const instrument of Object.values(graph.instruments)) {
-      try { instrument.dispose(); } catch (_) { /* Audio graph may already have ended. */ }
+      try { instrument.dispose(); } catch { /* Audio graph may already have ended. */ }
     }
     for (const node of graph.routes) {
-      try { node.dispose(); } catch (_) { /* Audio graph may already have ended. */ }
+      try { node.dispose(); } catch { /* Audio graph may already have ended. */ }
     }
   }
 
@@ -311,7 +311,7 @@
     amp.setValueAtTime(0.0001, end + 0.002);
   }
 
-  function strikeRoll(graph, time, length, velocity, pan) {
+  function strikeRoll(graph, time, length, velocity) {
     // A growing snare-wire roll with ~18 Hz strokes before the next footfall.
     const amp = graph.instruments.rollSwell.gain;
     const curve = Float32Array.from({length: 384}, (_, i) => {
