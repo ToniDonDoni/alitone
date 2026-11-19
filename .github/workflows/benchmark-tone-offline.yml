@@ -1,0 +1,39 @@
+name: Benchmark 16s Tone.js instrument renders
+
+on:
+  push:
+    branches:
+      - march-of-the-fallen
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Runner details
+        run: |
+          node --version
+          lscpu | grep -E 'Model name|CPU\(s\)|Architecture' || true
+          google-chrome --version
+      - name: Build standalone Tone.js page
+        run: python3 tools/build_tone_page.py
+      - name: Benchmark each 16-second instrument solo
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tools/benchmark_tone_offline.mjs
+      - name: Upload benchmark measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tone-offline-16s-timings
+          path: output/benchmarks/*
+          if-no-files-found: error
+          retention-days: 30
