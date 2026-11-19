@@ -16,8 +16,8 @@
   .meter { color: var(--accent); font-size: 1.2rem; white-space: nowrap; }
   .deck { border: 1px solid var(--line); background: #191a1c; }
   .display { position: relative; border-bottom: 1px solid var(--line); background: #101113; }
-  canvas { display: block; width: 100%; height: clamp(150px, 31vw, 320px); }
-  .display footer { position: absolute; inset: auto 18px 15px; display: flex; justify-content: space-between; gap: 12px; color: var(--dim); font-size: .875rem; }
+  canvas { display: block; width: 100%; height: clamp(330px, 55vw, 455px); }
+  .display footer { display: flex; justify-content: space-between; gap: 12px; padding: 10px 16px; border-top: 1px solid #333439; color: var(--dim); font-size: .875rem; }
   .beats { display: inline-flex; align-items: center; gap: 7px; }
   .beat-light { width: 13px; height: 4px; background: #575253; }
   .beat-light.active { background: var(--accent); box-shadow: 0 0 12px #ff815e6e; }
@@ -34,7 +34,7 @@
   .volume input { width: clamp(62px, 10vw, 116px); }
   .engine { margin-top: 11px; color: #8e8985; font-size: .78rem; letter-spacing: .04em; }
   @media (max-width: 760px) { .controls { grid-template-columns: 1fr; gap: 14px; } .settings { justify-content: space-between; } }
-  @media (max-width: 510px) { header { align-items: start; } .settings { display: grid; grid-template-columns: 1fr; gap: 6px; } .slider input { width: 0; flex: 1; } }
+  @media (max-width: 510px) { canvas { height: 405px; } header { align-items: start; } .settings { display: grid; grid-template-columns: 1fr; gap: 6px; } .slider input { width: 0; flex: 1; } }
 </style>
 </head>
 <body>
@@ -45,7 +45,7 @@
   </header>
   <section class="deck" aria-label="Процедурный марш на Tone.js">
     <div class="display">
-      <canvas id="scope" aria-hidden="true"></canvas>
+      <canvas id="scope" role="img" aria-label="Дорожки инструментов с музыкальными событиями и линией воспроизведения"></canvas>
       <footer>
         <span id="status" role="status">Готово к запуску</span>
         <span class="beats" aria-hidden="true"><i class="beat-light"></i><i class="beat-light"></i></span>
@@ -108,6 +108,183 @@
   });
 })();
 </script>
+<script>/*
+ * Arrangement visualization for the procedural march.
+ * It mirrors scheduleBar timing, without changing the audio graph.
+ */
+(() => {
+  "use strict";
+
+  const PHRASE_BARS = 16;
+  const STEPS_PER_BAR = 8;
+  const TRACKS = [
+    {key: "kick", label: "Kick", icon: "◉", color: "#ff9274"},
+    {key: "beater", label: "Beater", icon: "✳", color: "#ffb19d"},
+    {key: "kickBody", label: "Body", icon: "◌", color: "#f8bd81"},
+    {key: "shell", label: "Shell", icon: "◎", color: "#ffd096"},
+    {key: "snare", label: "Snare", icon: "▣", color: "#dfacfc"},
+    {key: "snareBody", label: "S.Body", icon: "◈", color: "#b8a5ff"},
+    {key: "roll", label: "Roll", icon: "≋", color: "#f3a2d1"},
+    {key: "tom", label: "Tom", icon: "●", color: "#e0a5aa"},
+    {key: "sub", label: "Sub", icon: "▂", color: "#83b4ff"},
+    {key: "brass", label: "Brass", icon: "♬", color: "#b69bff"},
+    {key: "metal", label: "Metal", icon: "✦", color: "#90dbee"},
+    {key: "rumble", label: "Rumble", icon: "≈", color: "#92c9bc"}
+  ];
+  const ACCENTS = new Set([1, 4, 7, 9]);
+  const cached = new Map();
+
+  function eventsFor(bpm) {
+    const tempo = Number(bpm);
+    if (cached.has(tempo)) return cached.get(tempo);
+    const beat = 60 / tempo;
+    const stepSeconds = beat / 4;
+    const result = Object.fromEntries(TRACKS.map(track => [track.key, []]));
+    const add = (key, position, length, velocity = 1) => {
+      result[key].push({start: position, length: Math.max(length, 0.10), velocity});
+    };
+    for (let bar = 0; bar < PHRASE_BARS; bar++) {
+      const pedal = bar >= 8;
+      const start = bar * STEPS_PER_BAR;
+      for (let foot = 0; foot < 2; foot++) {
+        const step = start + foot * 4;
+        const accented = ACCENTS.has(bar * 2 + foot);
+        const weight = pedal ? 0.68 : (foot === 0 ? 1 : 0.88);
+        add("kick", step, 0.060 / stepSeconds, weight);
+        add("beater", step, 0.016 / stepSeconds, weight);
+        add("kickBody", step, 0.047 / stepSeconds, weight * 0.8);
+        add("shell", step + 0.052 / stepSeconds, 0.84 * beat / stepSeconds, weight);
+        add("snareBody", step, 0.045 / stepSeconds, weight * 0.55);
+        add("snare", step, 0.034 / stepSeconds, weight);
+        add("snare", step + 0.012 / stepSeconds, 0.027 / stepSeconds, weight * 0.65);
+        add("roll", step + 0.68, 0.84 * beat / stepSeconds, pedal ? 0.25 : 0.42);
+        if (accented || (pedal && foot === 0)) add("metal", step, 0.070 / stepSeconds, pedal ? 0.075 : 0.11);
+        if (!pedal) {
+          if (!accented && foot === 0) add("tom", step + 1.04, 0.094 / stepSeconds, 0.34);
+          add("sub", step + 1.18, accented ? 2.62 : 2.20, accented ? 0.60 : 0.17);
+          if (accented) add("brass", step + 1.33, 2.4, 0.35);
+        }
+      }
+      if (pedal) {
+        add("sub", start, 7.85, 0.46 + 0.10 * Math.sin((bar - 8) * 0.42));
+        add("brass", start + (bar % 2 ? 2.2 : 0.85), bar % 2 ? 3.8 : 3.2, 0.35);
+        if (bar % 4 === 3) add("brass", start + 6, 1.35, 0.21);
+      }
+      if (bar % 2 === 0) add("rumble", start, 2.4 / stepSeconds, 0.16);
+      if (bar % 4 === 1 || bar % 4 === 3) {
+        add("tom", start + 6.89, 0.094 / stepSeconds, 0.32);
+        add("snare", start + 7.5, 0.027 / stepSeconds, 0.08);
+      }
+    }
+    cached.set(tempo, result);
+    return result;
+  }
+
+  function draw(ctx, {width, height, bpm, step, playing}) {
+    const events = eventsFor(bpm);
+    const plotBars = width < 570 ? 4 : 8;
+    const period = PHRASE_BARS * STEPS_PER_BAR;
+    const current = ((Number(step) % period) + period) % period;
+    const viewStartBar = Math.floor(current / (plotBars * STEPS_PER_BAR)) * plotBars;
+    const viewStart = viewStartBar * STEPS_PER_BAR;
+    const count = plotBars * STEPS_PER_BAR;
+    const labelWidth = width < 570 ? Math.min(86, width * 0.31) : 120;
+    const plotX = labelWidth + 6;
+    const plotWidth = Math.max(1, width - plotX - 7);
+    const headerHeight = 29;
+    const trackHeight = (height - headerHeight - 5) / TRACKS.length;
+
+    ctx.fillStyle = "#101113";
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = "#191a1e";
+    ctx.fillRect(0, 0, labelWidth, height);
+    ctx.fillStyle = "#15171a";
+    ctx.fillRect(plotX, 0, plotWidth, height);
+
+    for (let i = 0; i <= count; i++) {
+      const x = plotX + i / count * plotWidth;
+      ctx.strokeStyle = i % STEPS_PER_BAR === 0 ? "#505055" : i % 4 === 0 ? "#393a40" : "#282a2f";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x + 0.5, headerHeight);
+      ctx.lineTo(x + 0.5, height);
+      ctx.stroke();
+    }
+    ctx.textBaseline = "middle";
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.fillStyle = "#aaa6a0";
+    ctx.fillText("TRACK", 11, 14);
+    for (let bar = 0; bar < plotBars; bar++) {
+      ctx.fillStyle = "#a9a7a1";
+      ctx.fillText(String(viewStartBar + bar + 1), plotX + (bar + 0.08) * plotWidth / plotBars, 14);
+    }
+
+    TRACKS.forEach((track, index) => {
+      const y = headerHeight + index * trackHeight;
+      const end = y + trackHeight;
+      ctx.fillStyle = index % 2 ? "#17191b" : "#1b1d20";
+      ctx.fillRect(0, y, labelWidth, trackHeight);
+      ctx.strokeStyle = "#313136";
+      ctx.beginPath();
+      ctx.moveTo(0, end + 0.5);
+      ctx.lineTo(width, end + 0.5);
+      ctx.stroke();
+
+      const instances = [];
+      for (const event of events[track.key]) {
+        for (const offset of [-period, 0, period]) {
+          const start = event.start + offset;
+          if (start + event.length > viewStart && start < viewStart + count) {
+            instances.push({...event, start});
+          }
+        }
+      }
+      const active = playing && instances.some(event => event.start <= current && event.start + event.length >= current);
+      if (active) {
+        ctx.fillStyle = "#343036";
+        ctx.fillRect(0, y + 1, labelWidth, Math.max(0, trackHeight - 2));
+      }
+      ctx.font = "600 13px system-ui, sans-serif";
+      ctx.fillStyle = track.color;
+      ctx.fillText(track.icon, 7, y + trackHeight / 2);
+      ctx.font = width < 570 ? "11px system-ui, sans-serif" : "12px system-ui, sans-serif";
+      ctx.fillStyle = active ? "#fff9ef" : "#d1cec9";
+      ctx.fillText(track.label, 25, y + trackHeight / 2);
+
+      for (const event of instances) {
+        const left = plotX + Math.max(0, event.start - viewStart) / count * plotWidth;
+        const right = plotX + Math.min(count, event.start + event.length - viewStart) / count * plotWidth;
+        const blockWidth = Math.max(2.5, right - left);
+        const blockHeight = Math.max(2, trackHeight - 7);
+        ctx.globalAlpha = active && event.start <= current && event.start + event.length >= current
+          ? 1 : 0.50 + 0.4 * Math.min(1, event.velocity);
+        ctx.fillStyle = track.color;
+        ctx.fillRect(left, y + 3.5, blockWidth, blockHeight);
+      }
+      ctx.globalAlpha = 1;
+    });
+
+    const headX = plotX + (current - viewStart) / count * plotWidth;
+    if (headX >= plotX && headX <= plotX + plotWidth) {
+      ctx.strokeStyle = "#ff815e";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(headX, 0);
+      ctx.lineTo(headX, height);
+      ctx.stroke();
+      ctx.fillStyle = "#ff815e";
+      ctx.beginPath();
+      ctx.moveTo(headX - 5, 0);
+      ctx.lineTo(headX + 5, 0);
+      ctx.lineTo(headX, 9);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  window.MarchArrangement = Object.freeze({tracks: TRACKS, eventsFor, draw});
+})();
+</script>
 <script>/* Procedural March of the Fallen, built on the vendored Tone.js 15.1.22 source. */
 (() => {
   "use strict";
@@ -115,6 +292,7 @@
   const T = window.Tone;
   const I = window.MarchInstruments;
   if (!I) throw new Error("MarchInstruments must be loaded before march-tone.js");
+  if (!window.MarchArrangement) throw new Error("MarchArrangement must be loaded before march-tone.js");
   const QUARTER_NOTES_PER_BAR = 2;
   const BARS_PER_PHRASE = 16;
   const BASS_ACCENTS = new Set([1, 4, 7, 9]);
@@ -362,10 +540,10 @@
 
   function disposeGraph(graph) {
     for (const instrument of Object.values(graph.instruments)) {
-      try { instrument.dispose(); } catch (_) { /* Audio graph may already have ended. */ }
+      try { instrument.dispose(); } catch { /* Audio graph may already have ended. */ }
     }
     for (const node of graph.routes) {
-      try { node.dispose(); } catch (_) { /* Audio graph may already have ended. */ }
+      try { node.dispose(); } catch { /* Audio graph may already have ended. */ }
     }
   }
 
@@ -420,7 +598,7 @@
     amp.setValueAtTime(0.0001, end + 0.002);
   }
 
-  function strikeRoll(graph, time, length, velocity, pan) {
+  function strikeRoll(graph, time, length, velocity) {
     // A growing snare-wire roll with ~18 Hz strokes before the next footfall.
     const amp = graph.instruments.rollSwell.gain;
     const curve = Float32Array.from({length: 384}, (_, i) => {
@@ -511,8 +689,6 @@
   const scope = document.querySelector("#scope");
   const drawing = scope.getContext("2d");
   const lights = [...document.querySelectorAll(".beat-light")];
-  const scopeAnalyser = new T.Analyser("waveform", 1024);
-  scopeAnalyser.connect(T.getContext().destination);
   const scheduled = {id: null, graph: null};
   let pendingTempo = null;
   let activeTempo = 80;
@@ -537,7 +713,7 @@
     activeTempo = Number(tempo.value);
     pendingTempo = null;
     transport.bpm.value = activeTempo;
-    scheduled.graph = createGraph(scopeAnalyser, null, outputLevel());
+    scheduled.graph = createGraph(T.getContext().destination, null, outputLevel());
     let bar = 0;
     scheduled.id = transport.scheduleRepeat(time => {
       if (pendingTempo !== null) {
@@ -598,38 +774,21 @@
       scope.height = Math.round(height * scale);
     }
     drawing.setTransform(scale, 0, 0, scale, 0, 0);
-    drawing.clearRect(0, 0, width, height);
-    drawing.strokeStyle = "#302d2c";
-    drawing.lineWidth = 1;
-    drawing.beginPath();
-    for (let index = 1; index < 16; index++) {
-      drawing.moveTo(width * index / 16, 0);
-      drawing.lineTo(width * index / 16, height);
-    }
-    drawing.stroke();
+
     const transport = T.Transport;
-    const inPlayback = Boolean(scheduled.graph) && transport.state === "started";
+    const playing = Boolean(scheduled.graph) && transport.state === "started";
+    const ppq = Number(transport.PPQ);
+    const ticks = Number(transport.ticks);
+    // Musical ticks keep the playhead aligned when BPM changes.
+    const step = Number.isFinite(ticks) && ppq > 0
+      ? ticks / (ppq / 4) : transport.seconds * activeTempo / 60 * 4;
+    window.MarchArrangement.draw(drawing, {width, height, bpm: activeTempo, step, playing});
+
     const beatLength = 60 / activeTempo;
     const elapsed = ((transport.seconds % (2 * beatLength)) + (2 * beatLength)) % (2 * beatLength);
-    const beat = inPlayback ? Math.floor(elapsed / beatLength) : -1;
+    const beat = playing ? Math.floor(elapsed / beatLength) : -1;
     lights.forEach((light, index) => light.classList.toggle("active", index === beat));
-    drawing.strokeStyle = inPlayback ? "#ff815e" : "#77524b";
-    drawing.lineWidth = 1.6;
-    drawing.beginPath();
-    const values = scopeAnalyser.getValue();
-    if (inPlayback && values && values.length) {
-      for (let index = 0; index < values.length; index += 2) {
-        const x = width * index / (values.length - 1);
-        const y = height * 0.48 - Number(values[index]) * height * 0.62;
-        if (index === 0) drawing.moveTo(x, y);
-        else drawing.lineTo(x, y);
-      }
-    } else {
-      drawing.moveTo(0, height * 0.48);
-      drawing.lineTo(width, height * 0.48);
-    }
-    drawing.stroke();
-    if (inPlayback) paintFrame = requestAnimationFrame(paint);
+    if (playing) paintFrame = requestAnimationFrame(paint);
   }
 
   window.addEventListener("resize", paint);
@@ -638,6 +797,7 @@
     version: "Tone.js 15.1.22",
     patches: PATCHES,
     renderOffline,
+    get arrangement() { return window.MarchArrangement; },
     get transport() { return T.Transport; },
     get graph() { return scheduled.graph; },
     get activeTempo() { return activeTempo; }
