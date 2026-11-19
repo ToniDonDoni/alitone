@@ -108,6 +108,15 @@
     });
     instruments.kick.volume.value = 1;
     attach(instruments.kick, buses.drums, -1, 0, routes, panners, "kick", voiceSolo, "kick");
+    // The reference kick has a short membrane mode at 1.86 times the swept pitch.
+    instruments.kickRim = new I.Kick({
+      pitchDecay: PATCHES.kick.pitchDecay,
+      octaves: PATCHES.kick.octaveMultiplier,
+      oscillator: {type: "sine"},
+      envelope: {attack: 0.001, decay: 0.047, sustain: 0, release: 0.01}
+    });
+    instruments.kickRim.volume.value = -7;
+    attach(instruments.kickRim, buses.drums, -1, 0, routes, null, null, voiceSolo, "kick");
 
     instruments.beater = new I.Beater({
       noise: {type: "white"},
@@ -190,6 +199,12 @@
     instruments.sub.connect(subDrive);
     attach(subDrive, buses.bass, -2, 0, routes, panners, "sub", voiceSolo, "sub");
     routes.push(subDrive);
+    // A quiet octave supplies the reference's ~12% second bass partial.
+    instruments.subHarmonic = new T.Synth({
+      oscillator: {type: "sine"},
+      envelope: {attack: PATCHES.sub.pulseAttack, decay: 0.13, sustain: 0.72, release: PATCHES.sub.release}
+    });
+    attach(instruments.subHarmonic, buses.bass, -19, 0, routes, null, null, voiceSolo, "sub");
 
     instruments.brass = new I.LowBrass({
       harmonicity: PATCHES.brass.harmonicity,
@@ -269,7 +284,11 @@
       node.triggerAttackRelease(duration, time, clamp(velocity * variation, 0.02, 1));
       graph.instruments.metalMode.triggerAttackRelease(326, duration, time, clamp(velocity * variation, 0.02, 1));
     }
-    else if (instrument === "sub") node.triggerAttackRelease(duration.note, duration.seconds, time, clamp(velocity * variation, 0.02, 1));
+    else if (instrument === "sub") {
+      const level = clamp(velocity * variation, 0.02, 1);
+      node.triggerAttackRelease(duration.note, duration.seconds, time, level);
+      graph.instruments.subHarmonic.triggerAttackRelease(T.Frequency(duration.note).toFrequency() * 2, duration.seconds, time, level);
+    }
     else if (instrument === "brass") {
       const level = clamp(velocity * variation, 0.02, 1);
       node.triggerAttackRelease(duration.note, duration.seconds, time, level);
@@ -349,6 +368,7 @@
       graph.panners.shell.pan.setValueAtTime(side * 0.30, at + 0.052);
       graph.panners.snareBody.pan.setValueAtTime(side, at);
       drums.kick.triggerAttackRelease(PATCHES.kick.targetHz, 0.060, at, clamp(weight * variation, 0.02, 1));
+      drums.kickRim.triggerAttackRelease(PATCHES.kick.targetHz * 1.86, 0.047, at, clamp(weight * variation, 0.02, 1));
       drums.beater.triggerAttackRelease(PATCHES.kick.noiseDecay, at, clamp(weight, 0.02, 1));
       drums.kickBody.triggerAttackRelease(PATCHES.kick.bodyDecay, at, clamp(weight * PATCHES.kick.bodyVelocity * variation, 0.02, 1));
       strikeShell(graph, at + 0.052, beat, weight * 0.9);
