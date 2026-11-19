@@ -122,8 +122,8 @@
     kick: {
       targetHz: 33, octaveMultiplier: 6.36, pitchDecay: 0.023,
       attack: 0.001, decay: 0.060, noiseDecay: 0.016,
-      beaterBands: [{hz: 720, q: 0.95, trimDb: 13.5}, {hz: 1880, q: 1.25, trimDb: 9.5}],
-      bodyHz: 193, bodyQ: 1.15, bodyDecay: 0.047, bodyVelocity: 0.80, bodyTrimDb: 15,
+      beaterBands: [{hz: 720, q: 0.95, trimDb: 16}, {hz: 1880, q: 1.25, trimDb: 12}],
+      bodyHz: 193, bodyQ: 1.15, bodyDecay: 0.047, bodyVelocity: 0.80, bodyTrimDb: 20,
       shellStartHz: 36, shellEndHz: 59, shellTau: 0.170,
       shellAttack: 0.037, shellDecayBeats: 0.58, shellFadeBeats: 0.84
     },
@@ -216,7 +216,7 @@
       oscillator: {type: "sine"},
       envelope: {attack: PATCHES.kick.attack, decay: PATCHES.kick.decay, sustain: 0, release: 0.015}
     });
-    instruments.kick.volume.value = -1;
+    instruments.kick.volume.value = 1;
     attach(instruments.kick, buses.drums, -1, 0, routes, panners, "kick", voiceSolo, "kick");
 
     instruments.beater = new I.Beater({
@@ -278,7 +278,7 @@
       noise: {type: "white"},
       envelope: {attack: PATCHES.snare.rollAttack, decay: PATCHES.snare.rollDecay, sustain: PATCHES.snare.rollSustain, release: 0.09}
     });
-    instruments.roll.volume.value = 6;
+    instruments.roll.volume.value = 7.5;
     instruments.rollSwell = new T.Gain(0.0001);
     instruments.roll.connect(instruments.rollSwell);
     for (const [index, band] of PATCHES.snare.rollBands.entries()) {
@@ -322,7 +322,7 @@
     });
     const harmonicFilter = new T.Filter(PATCHES.brass.lowpassHz, "lowpass");
     instruments.brassHarmonics.connect(harmonicFilter);
-    attach(harmonicFilter, buses.brass, -6, 0, routes, null, null, voiceSolo, "brass");
+    attach(harmonicFilter, buses.brass, -12, 0, routes, null, null, voiceSolo, "brass");
     routes.push(harmonicFilter);
 
     instruments.metal = new I.MetalAccent({
@@ -343,7 +343,7 @@
       oscillator: {type: "sine"},
       envelope: {attack: 0.001, decay: 0.078, sustain: 0, release: 0.025}
     });
-    attach(instruments.metalMode, buses.textures, -6, 0.12, routes, null, null, voiceSolo, "metal");
+    attach(instruments.metalMode, buses.textures, 2, 0.12, routes, null, null, voiceSolo, "metal");
 
     instruments.rumble = new I.Rumble({
       noise: {type: "brown"},
