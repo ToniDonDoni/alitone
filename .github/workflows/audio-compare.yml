@@ -65,5 +65,6 @@ jobs:
           path: |
             output/renders/*.f32
             output/analysis/*
+            references/march-of-the-fallen-tone.html
           if-no-files-found: warn
           retention-days: 7
