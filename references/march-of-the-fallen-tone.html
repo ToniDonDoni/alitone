@@ -384,7 +384,7 @@
     return node;
   }
 
-  function createGraph(destination, solo = null, volumeScale = 1, mutedNames = []) {
+  function createGraph(destination, solo = null, volumeScale = 1, mutedNames = [], isolatedVoice = null) {
     const masterA = new T.Filter(PATCHES.master.lowpassHz, "lowpass");
     const masterB = new T.Filter(PATCHES.master.edgeHz, "lowpass");
     const compressor = new T.Compressor({threshold: PATCHES.master.compressionDb, ratio: PATCHES.master.ratio, attack: 0.003, release: 0.135, knee: 10});
@@ -406,19 +406,21 @@
       tom: "drums", snare: "drums", snareBody: "drums", roll: "drums",
       sub: "bass", brass: "brass", metal: "textures", rumble: "textures"
     };
+    if (isolatedVoice && !Object.hasOwn(voiceBuses, isolatedVoice)) {
+      throw new Error("Unknown isolated instrument: " + isolatedVoice);
+    }
+    const active = name => !isolatedVoice || isolatedVoice === name;
     const selectedBus = voiceBuses[solo] || solo;
     const voiceSolo = voiceBuses[solo] ? solo : null;
-    const buses = {
-      drums: new T.Gain(selectedBus && selectedBus !== "drums" ? 0 : 1),
-      bass: new T.Gain(selectedBus && selectedBus !== "bass" ? 0 : 1),
-      brass: new T.Gain(selectedBus && selectedBus !== "brass" ? 0 : 1),
-      textures: new T.Gain(selectedBus && selectedBus !== "textures" ? 0 : 1)
-    };
+    const families = ["drums", "bass", "brass", "textures"];
+    const buses = Object.fromEntries(families
+      .filter(family => !isolatedVoice || voiceBuses[isolatedVoice] === family)
+      .map(family => [family, new T.Gain(selectedBus && selectedBus !== family ? 0 : 1)]));
     Object.values(buses).forEach(bus => bus.connect(masterA));
     const routes = [masterA, masterB, compressor, limiter, peakGuard, output, ...Object.values(buses)];
     // Separate per-voice gains before the family bus, master dynamics and room taps.
     // This mutes every oscillator/noise layer of a voice, including its reflections.
-    const voiceGains = Object.fromEntries(Object.entries(voiceBuses).map(([name, family]) => {
+    const voiceGains = Object.fromEntries(Object.entries(voiceBuses).filter(([name]) => active(name)).map(([name, family]) => {
       const gain = new T.Gain(mutedNames.includes(name) ? 0 : 1);
       gain.connect(buses[family]);
       routes.push(gain);
@@ -442,6 +444,7 @@
     const panners = {};
     const instruments = {};
 
+    if (active("kick")) {
     instruments.kick = new I.Kick({
       pitchDecay: PATCHES.kick.pitchDecay,
       octaves: PATCHES.kick.octaveMultiplier,
@@ -451,6 +454,9 @@
     instruments.kick.volume.value = 1;
     attach(instruments.kick, voiceGains.kick, -1, 0, routes, panners, "kick", voiceSolo, "kick");
 
+    }
+
+    if (active("beater")) {
     instruments.beater = new I.Beater({
       noise: {type: "white"},
       envelope: {attack: 0.001, decay: PATCHES.kick.noiseDecay, sustain: 0, release: 0.006}
@@ -463,6 +469,9 @@
       routes.push(filter);
     }
 
+    }
+
+    if (active("kickBody")) {
     instruments.kickBody = new I.KickBody({
       noise: {type: "white"},
       envelope: {attack: 0.001, decay: PATCHES.kick.bodyDecay, sustain: 0, release: 0.01}
@@ -475,6 +484,9 @@
     // A distinct heel/boot impact fills the woody, lightly ringing 95-520 Hz
     // band heard after the kick attack in the original Revised rendering.
     // Both parts feed one independent, muteable Step track.
+    }
+
+    if (active("step")) {
     instruments.step = new I.Footstep({
       pitchDecay: PATCHES.step.pitchDecay,
       octaves: PATCHES.step.octaveMultiplier,
@@ -501,6 +513,9 @@
     attach(heelEdge, voiceGains.step, PATCHES.step.clackTrimDb, 0.06, routes, null, null, voiceSolo, "step");
     routes.push(sole, heelEdge);
 
+    }
+
+    if (active("shell")) {
     instruments.shell = new I.Shell(PATCHES.kick.shellStartHz, "sine");
     instruments.shellGain = new T.Gain(0.0001);
     instruments.shell.connect(instruments.shellGain);
@@ -512,6 +527,9 @@
     attach(instruments.shellHarmonicGain, voiceGains.shell, -0.5, 0, routes, null, null, voiceSolo, "shell");
     instruments.shellHarmonic.start();
 
+    }
+
+    if (active("tom")) {
     instruments.tom = new I.Tom({
       pitchDecay: PATCHES.tom.pitchDecay,
       octaves: PATCHES.tom.octaveMultiplier,
@@ -520,6 +538,9 @@
     });
     attach(instruments.tom, voiceGains.tom, PATCHES.tom.trimDb + 2, 0, routes, panners, "tom", voiceSolo, "tom");
 
+    }
+
+    if (active("snare")) {
     instruments.snare = new I.Snare({
       noise: {type: "white"},
       envelope: {attack: PATCHES.snare.attack, decay: PATCHES.snare.decay, sustain: 0, release: 0.012}
@@ -531,10 +552,16 @@
       attach(filter, voiceGains.snare, index === 0 ? 1.5 : -0.5, index === 0 ? 0.08 : -0.08, routes, null, null, voiceSolo, "snare");
       routes.push(filter);
     }
+    }
+
+    if (active("snareBody")) {
     const snareBody = new I.SnareBody({pitchDecay: 0.012, octaves: 1.35, oscillator: {type: "sine"}, envelope: {attack: 0.001, decay: 0.045, sustain: 0, release: 0.01}});
     instruments.snareBody = snareBody;
     attach(snareBody, voiceGains.snareBody, 8, 0, routes, panners, "snareBody", voiceSolo, "snareBody");
 
+    }
+
+    if (active("roll")) {
     instruments.roll = new I.SnareRoll({
       noise: {type: "white"},
       envelope: {attack: PATCHES.snare.rollAttack, decay: PATCHES.snare.rollDecay, sustain: PATCHES.snare.rollSustain, release: 0.09}
@@ -549,6 +576,9 @@
       routes.push(filter);
     }
 
+    }
+
+    if (active("sub")) {
     instruments.sub = new I.SubBass({
       oscillator: {type: "sine"},
       filter: {type: "lowpass", frequency: PATCHES.sub.filterHz, Q: 0.7},
@@ -562,6 +592,9 @@
     attach(subDrive, voiceGains.sub, -2, 0, routes, panners, "sub", voiceSolo, "sub");
     routes.push(subDrive);
 
+    }
+
+    if (active("brass")) {
     instruments.brass = new I.LowBrass({
       harmonicity: PATCHES.brass.harmonicity,
       modulationIndex: PATCHES.brass.modulationIndex,
@@ -586,6 +619,9 @@
     attach(harmonicFilter, voiceGains.brass, -12, 0, routes, null, null, voiceSolo, "brass");
     routes.push(harmonicFilter);
 
+    }
+
+    if (active("metal")) {
     instruments.metal = new I.MetalAccent({
       frequency: PATCHES.metal.frequency,
       harmonicity: 5,
@@ -606,6 +642,9 @@
     });
     attach(instruments.metalMode, voiceGains.metal, 2, 0.12, routes, null, null, voiceSolo, "metal");
 
+    }
+
+    if (active("rumble")) {
     instruments.rumble = new I.Rumble({
       noise: {type: "brown"},
       envelope: {attack: 0.24, decay: 0.3, sustain: 0.55, release: 0.65}
@@ -618,7 +657,9 @@
     attach(rumbleHigh, voiceGains.rumble, 0, 0, routes, panners, "rumble", voiceSolo, "rumble");
     routes.push(rumbleHigh, rumbleLow);
 
-    return {buses, instruments, routes, panners, voiceGains};
+    }
+
+    return {buses, instruments, routes, panners, voiceGains, isolatedVoice};
   }
 
   function disposeGraph(graph) {
@@ -721,6 +762,7 @@
       if (graph.audit.length > 512) graph.audit.splice(0, graph.audit.length - 512);
     };
     const place = (name, offset, length, velocity, pan = 0, lag = 0) => {
+      if (graph.isolatedVoice && graph.isolatedVoice !== name) return;
       const when = time + offset * step + lag;
       record(name, when, typeof length === "object" ? length.seconds : length);
       if (name === "roll") strikeRoll(graph, when, length, velocity);
@@ -734,21 +776,31 @@
       const weight = pedal ? 0.68 : (foot === 0 ? 1 : 0.88);
       const at = time + offset * step;
       const variation = 0.97 + 0.06 * random();
-      graph.panners.kick.pan.setValueAtTime(side * 0.30, at);
-      graph.panners.shell.pan.setValueAtTime(side * 0.30, at + 0.052);
-      graph.panners.snareBody.pan.setValueAtTime(side, at);
-      record("kick", at, 0.060);
-      drums.kick.triggerAttackRelease(PATCHES.kick.targetHz, 0.060, at, clamp(weight * variation, 0.02, 1));
+      graph.panners.kick?.pan.setValueAtTime(side * 0.30, at);
+      graph.panners.shell?.pan.setValueAtTime(side * 0.30, at + 0.052);
+      graph.panners.snareBody?.pan.setValueAtTime(side, at);
+      if (!graph.isolatedVoice || graph.isolatedVoice === "kick") {
+        record("kick", at, 0.060);
+        drums.kick.triggerAttackRelease(PATCHES.kick.targetHz, 0.060, at, clamp(weight * variation, 0.02, 1));
+      }
       // The sole lands just after the drum attack, as a marching foot would.
       place("step", offset + PATCHES.step.delay / step, PATCHES.step.length, weight * 0.78, side * 0.6);
-      record("beater", at, PATCHES.kick.noiseDecay);
-      drums.beater.triggerAttackRelease(PATCHES.kick.noiseDecay, at, clamp(weight, 0.02, 1));
-      record("kickBody", at, PATCHES.kick.bodyDecay);
-      drums.kickBody.triggerAttackRelease(PATCHES.kick.bodyDecay, at, clamp(weight * PATCHES.kick.bodyVelocity * variation, 0.02, 1));
-      record("shell", at + 0.052, PATCHES.kick.shellFadeBeats * beat);
-      strikeShell(graph, at + 0.052, beat, weight * 0.9);
-      record("snareBody", at, 0.045);
-      drums.snareBody.triggerAttackRelease(140, 0.045, at, clamp(weight * 0.55, 0.02, 1));
+      if (!graph.isolatedVoice || graph.isolatedVoice === "beater") {
+        record("beater", at, PATCHES.kick.noiseDecay);
+        drums.beater.triggerAttackRelease(PATCHES.kick.noiseDecay, at, clamp(weight, 0.02, 1));
+      }
+      if (!graph.isolatedVoice || graph.isolatedVoice === "kickBody") {
+        record("kickBody", at, PATCHES.kick.bodyDecay);
+        drums.kickBody.triggerAttackRelease(PATCHES.kick.bodyDecay, at, clamp(weight * PATCHES.kick.bodyVelocity * variation, 0.02, 1));
+      }
+      if (!graph.isolatedVoice || graph.isolatedVoice === "shell") {
+        record("shell", at + 0.052, PATCHES.kick.shellFadeBeats * beat);
+        strikeShell(graph, at + 0.052, beat, weight * 0.9);
+      }
+      if (!graph.isolatedVoice || graph.isolatedVoice === "snareBody") {
+        record("snareBody", at, 0.045);
+        drums.snareBody.triggerAttackRelease(140, 0.045, at, clamp(weight * 0.55, 0.02, 1));
+      }
       place("snare", offset, 0.034, weight, side);
       place("snare", offset, 0.027, weight * 0.65, -side * 1.6, 0.012);
       place("roll", offset + 0.68, 0.84 * beat, pedal ? 0.25 : 0.42, -side * 1.3);
@@ -774,19 +826,25 @@
     }
   }
 
-  async function renderOffline({bpm = 80, bars = 2, solo = null, mutedTracks: offlineMuted = [], sampleRate = 48000} = {}) {
+  async function renderOffline({bpm = 80, bars = 2, solo = null, mutedTracks: offlineMuted = [], sampleRate = 48000, isolatedVoice = null, includeDiagnostics = false} = {}) {
     const duration = bars * QUARTER_NOTES_PER_BAR * 60 / bpm + 0.12;
     let graph;
     const buffer = await T.Offline(({transport}) => {
       transport.timeSignature = QUARTER_NOTES_PER_BAR;
       transport.bpm.value = bpm;
-      graph = createGraph(T.getContext().destination, solo, 1, offlineMuted);
+      graph = createGraph(T.getContext().destination, solo, 1, offlineMuted, isolatedVoice);
       let bar = 0;
       transport.scheduleRepeat(time => scheduleBar(graph, time, bar++, bpm), "1m");
       transport.start(0.02);
     }, duration, 2, sampleRate);
+    const diagnostics = graph ? {
+      instrumentKeys: Object.keys(graph.instruments),
+      voiceGainKeys: Object.keys(graph.voiceGains),
+      busKeys: Object.keys(graph.buses)
+    } : null;
     if (graph) disposeGraph(graph);
-    return buffer.get();
+    const audio = buffer.get();
+    return includeDiagnostics ? {audio, diagnostics} : audio;
   }
 
   const button = document.querySelector("#transport");
