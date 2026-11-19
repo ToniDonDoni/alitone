@@ -131,6 +131,14 @@ try {
     const byteCount = interleaveAndWrite(filename, result.data, result.peak);
     console.log("Tone.Offline rendered " + filename + " at " + bpm + " BPM, " + result.length + " stereo frames, peak " + result.peak.toFixed(3) + ", " + byteCount + " bytes.");
   }
+  if (process.argv.includes("--stems")) {
+    for (const voice of ["kick", "shell", "tom", "snare", "roll", "metal", "rumble", "sub", "brass", "beater", "kickBody", "snareBody"]) {
+      const result = await evaluate(renderExpression(80, 2, voice));
+      if (result.peak < 0.0001) throw new Error("Silent voice stem: " + voice);
+      const bytes = interleaveAndWrite("tone-80-2bars-stem-" + voice + "-stereo.f32", result.data, result.peak);
+      console.log("Voice stem " + voice + ": peak " + result.peak.toFixed(4) + ", bytes " + bytes);
+    }
+  }
   for (const solo of ["drums", "bass", "brass", "textures"]) {
     const result = await evaluate(renderExpression(80, 2, solo));
     if (result.peak < 0.0005) throw new Error("Silent solo bus: " + solo);

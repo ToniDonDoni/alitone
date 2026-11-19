@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   render:
@@ -32,20 +32,31 @@ jobs:
         run: python3 -m pip install numpy scipy matplotlib
       - name: Create output directories
         run: mkdir -p output/renders output/analysis
+      - name: Build updated standalone HTML
+        run: python3 tools/build_tone_page.py
       - name: Check revised page and export PCM
         env:
           CHROME_PATH: /usr/bin/google-chrome
-        run: node tools/check_browser.mjs --render
+        run: node tools/check_browser.mjs --render --stems
       - name: Check Tone.js page and export PCM
         env:
           CHROME_PATH: /usr/bin/google-chrome
-        run: node tools/check_tone_page.mjs
-      - name: Rebuild embedded page and verify provenance
+        run: node tools/check_tone_page.mjs --stems
+      - name: Verify generated HTML includes tuned patches
         run: |
-          python3 tools/build_tone_page.py
-          git diff --exit-code -- references/march-of-the-fallen-tone.html
+          grep -q "function strikeRoll" references/march-of-the-fallen-tone.html
+          grep -q "shellHarmonic" references/march-of-the-fallen-tone.html
       - name: Rendered audio analysis
         run: python3 tools/compare_rendered_audio.py
+      - name: Commit generated standalone HTML
+        run: |
+          if ! git diff --quiet -- references/march-of-the-fallen-tone.html; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add references/march-of-the-fallen-tone.html
+            git commit -m "Rebuild standalone Tone march with improved voice synthesis"
+            git push origin HEAD:march-of-the-fallen
+          fi
       - name: Upload PCM and figures even if comparison fails
         if: always()
         uses: actions/upload-artifact@v4

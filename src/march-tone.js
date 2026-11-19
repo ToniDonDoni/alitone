@@ -10,7 +10,7 @@
   const BASS_ACCENTS = new Set([1, 4, 7, 9]);
   const PATCHES = {
     kick: {
-      targetHz: 33, octaveMultiplier: 5.8, pitchDecay: 0.023,
+      targetHz: 33, octaveMultiplier: 6.36, pitchDecay: 0.023,
       attack: 0.001, decay: 0.060, noiseDecay: 0.016,
       beaterBands: [{hz: 720, q: 0.95, trimDb: 5.5}, {hz: 1880, q: 1.25, trimDb: 1.5}],
       bodyHz: 193, bodyQ: 1.15, bodyDecay: 0.047, bodyVelocity: 0.80, bodyTrimDb: 12,
@@ -18,12 +18,12 @@
       shellAttack: 0.037, shellDecayBeats: 0.58, shellFadeBeats: 0.84
     },
     tom: {targetHz: 68, octaveMultiplier: 1.74, pitchDecay: 0.029, decay: 0.094, trimDb: 2},
-    snare: {attack: 0.001, decay: 0.034, rollBands: [{hz: 705, q: 1.15}, {hz: 1690, q: 1.35}], rollAttack: 0.16, rollDecay: 0.2, rollSustain: 0.38},
+    snare: {attack: 0.001, decay: 0.034, rollBands: [{hz: 705, q: 1.15}, {hz: 1690, q: 1.35}], rollAttack: 0.001, rollDecay: 0.01, rollSustain: 1},
     sub: {pulseAttack: 0.065, pedalAttack: 0.110, release: 0.050, filterHz: 145},
     brass: {harmonicity: 2, modulationIndex: 1.2, lowpassHz: 680, attack: 0.040, decay: 0.120, sustain: 0.65, release: 0.060, trimDb: -6},
     metal: {frequency: 70, modulationIndex: 2, decay: 0.070, lowpassHz: 2400},
     rumble: {lowHz: 38, highHz: 95, duration: 2.4},
-    master: {lowpassHz: 2930, edgeHz: 3510, compressionDb: -14, ratio: 3, limitDb: -1.2}
+    master: {lowpassHz: 2930, edgeHz: 3510, compressionDb: -7.8, ratio: 3, limitDb: -1.2}
   };
 
   const db = value => Math.pow(10, value / 20);
@@ -39,8 +39,8 @@
     };
   }
 
-  function attach(node, bus, trimDb = 0, pan = 0, routes, panners = null, panKey = null) {
-    const trim = new T.Gain(db(trimDb));
+  function attach(node, bus, trimDb = 0, pan = 0, routes, panners = null, panKey = null, voiceSolo = null, voiceName = null) {
+    const trim = new T.Gain(voiceSolo && voiceSolo !== voiceName ? 0 : db(trimDb));
     const panner = new T.Panner(pan);
     node.connect(trim);
     trim.connect(panner);
@@ -55,7 +55,10 @@
     const masterB = new T.Filter(PATCHES.master.edgeHz, "lowpass");
     const compressor = new T.Compressor({threshold: PATCHES.master.compressionDb, ratio: PATCHES.master.ratio, attack: 0.003, release: 0.135, knee: 10});
     const limiter = new T.Limiter(PATCHES.master.limitDb);
-    const peakGuard = new T.WaveShaper(value => 0.92 * Math.tanh(value / 0.92), 4096);
+    const peakGuard = new T.WaveShaper(value => {
+      const level = Math.abs(value);
+      return level <= 0.79 ? value : Math.sign(value) * (0.79 + 0.19 * Math.tanh((level - 0.79) / 0.19));
+    }, 4096);
     const output = new T.Gain(volumeScale);
     masterA.connect(masterB);
     masterB.connect(compressor);
@@ -64,14 +67,36 @@
     peakGuard.connect(output);
     output.connect(destination);
 
+    const voiceBuses = {
+      kick: "drums", beater: "drums", kickBody: "drums", shell: "drums",
+      tom: "drums", snare: "drums", snareBody: "drums", roll: "drums",
+      sub: "bass", brass: "brass", metal: "textures", rumble: "textures"
+    };
+    const selectedBus = voiceBuses[solo] || solo;
+    const voiceSolo = voiceBuses[solo] ? solo : null;
     const buses = {
-      drums: new T.Gain(solo && solo !== "drums" ? 0 : 1),
-      bass: new T.Gain(solo && solo !== "bass" ? 0 : 1),
-      brass: new T.Gain(solo && solo !== "brass" ? 0 : 1),
-      textures: new T.Gain(solo && solo !== "textures" ? 0 : 1)
+      drums: new T.Gain(selectedBus && selectedBus !== "drums" ? 0 : 1),
+      bass: new T.Gain(selectedBus && selectedBus !== "bass" ? 0 : 1),
+      brass: new T.Gain(selectedBus && selectedBus !== "brass" ? 0 : 1),
+      textures: new T.Gain(selectedBus && selectedBus !== "textures" ? 0 : 1)
     };
     Object.values(buses).forEach(bus => bus.connect(masterA));
     const routes = [masterA, masterB, compressor, limiter, peakGuard, output, ...Object.values(buses)];
+
+    // Band-limited early reflections match the reference's three short room taps.
+    const room = new T.Filter({frequency: 980, type: "bandpass", Q: 0.5});
+    Object.values(buses).forEach(bus => bus.connect(room));
+    routes.push(room);
+    for (const [delayTime, level, pan] of [[0.018, 0.26, -0.88], [0.032, 0.23, 0.9], [0.057, 0.11, -0.65]]) {
+      const delay = new T.Delay(delayTime, 0.1);
+      const gain = new T.Gain(level);
+      const panner = new T.Panner(pan);
+      room.connect(delay);
+      delay.connect(gain);
+      gain.connect(panner);
+      panner.connect(masterA);
+      routes.push(delay, gain, panner);
+    }
     const panners = {};
     const instruments = {};
 
@@ -82,7 +107,7 @@
       envelope: {attack: PATCHES.kick.attack, decay: PATCHES.kick.decay, sustain: 0, release: 0.015}
     });
     instruments.kick.volume.value = -4;
-    attach(instruments.kick, buses.drums, -1, 0, routes, panners, "kick");
+    attach(instruments.kick, buses.drums, -1, 0, routes, panners, "kick", voiceSolo, "kick");
 
     instruments.beater = new I.Beater({
       noise: {type: "white"},
@@ -92,7 +117,7 @@
     for (const band of PATCHES.kick.beaterBands) {
       const filter = new T.Filter({frequency: band.hz, type: "bandpass", Q: band.q});
       instruments.beater.connect(filter);
-      attach(filter, buses.drums, band.trimDb, 0, routes);
+      attach(filter, buses.drums, band.trimDb, 0, routes, null, null, voiceSolo, "beater");
       routes.push(filter);
     }
 
@@ -102,14 +127,19 @@
     });
     const kickBodyFilter = new T.Filter({frequency: PATCHES.kick.bodyHz, type: "bandpass", Q: PATCHES.kick.bodyQ});
     instruments.kickBody.connect(kickBodyFilter);
-    attach(kickBodyFilter, buses.drums, PATCHES.kick.bodyTrimDb, 0, routes);
+    attach(kickBodyFilter, buses.drums, PATCHES.kick.bodyTrimDb, 0, routes, null, null, voiceSolo, "kickBody");
     routes.push(kickBodyFilter);
 
     instruments.shell = new I.Shell(PATCHES.kick.shellStartHz, "sine");
     instruments.shellGain = new T.Gain(0.0001);
     instruments.shell.connect(instruments.shellGain);
-    attach(instruments.shellGain, buses.drums, -0.5, 0, routes, panners, "shell");
+    attach(instruments.shellGain, buses.drums, -0.5, 0, routes, panners, "shell", voiceSolo, "shell");
     instruments.shell.start();
+    instruments.shellHarmonic = new I.Shell(PATCHES.kick.shellStartHz * 2, "sine");
+    instruments.shellHarmonicGain = new T.Gain(0.0001);
+    instruments.shellHarmonic.connect(instruments.shellHarmonicGain);
+    attach(instruments.shellHarmonicGain, buses.drums, -0.5, 0, routes, null, null, voiceSolo, "shell");
+    instruments.shellHarmonic.start();
 
     instruments.tom = new I.Tom({
       pitchDecay: PATCHES.tom.pitchDecay,
@@ -117,7 +147,7 @@
       oscillator: {type: "sine"},
       envelope: {attack: 0.002, decay: PATCHES.tom.decay, sustain: 0, release: 0.02}
     });
-    attach(instruments.tom, buses.drums, PATCHES.tom.trimDb + 2, 0, routes, panners, "tom");
+    attach(instruments.tom, buses.drums, PATCHES.tom.trimDb + 2, 0, routes, panners, "tom", voiceSolo, "tom");
 
     instruments.snare = new I.Snare({
       noise: {type: "white"},
@@ -127,22 +157,24 @@
     for (const [index, band] of PATCHES.snare.rollBands.entries()) {
       const filter = new T.Filter({frequency: band.hz, type: "bandpass", Q: band.q});
       instruments.snare.connect(filter);
-      attach(filter, buses.drums, index === 0 ? 1.5 : -0.5, index === 0 ? 0.08 : -0.08, routes);
+      attach(filter, buses.drums, index === 0 ? 1.5 : -0.5, index === 0 ? 0.08 : -0.08, routes, null, null, voiceSolo, "snare");
       routes.push(filter);
     }
     const snareBody = new I.SnareBody({pitchDecay: 0.012, octaves: 1.35, oscillator: {type: "sine"}, envelope: {attack: 0.001, decay: 0.045, sustain: 0, release: 0.01}});
     instruments.snareBody = snareBody;
-    attach(snareBody, buses.drums, 8, 0, routes, panners, "snareBody");
+    attach(snareBody, buses.drums, 8, 0, routes, panners, "snareBody", voiceSolo, "snareBody");
 
     instruments.roll = new I.SnareRoll({
       noise: {type: "white"},
       envelope: {attack: PATCHES.snare.rollAttack, decay: PATCHES.snare.rollDecay, sustain: PATCHES.snare.rollSustain, release: 0.09}
     });
     instruments.roll.volume.value = 0;
+    instruments.rollSwell = new T.Gain(0.0001);
+    instruments.roll.connect(instruments.rollSwell);
     for (const [index, band] of PATCHES.snare.rollBands.entries()) {
       const filter = new T.Filter({frequency: band.hz, type: "bandpass", Q: band.q});
-      instruments.roll.connect(filter);
-      attach(filter, buses.drums, index === 0 ? 1.5 : -0.5, index === 0 ? -0.08 : 0.08, routes);
+      instruments.rollSwell.connect(filter);
+      attach(filter, buses.drums, index === 0 ? 1.5 : -0.5, index === 0 ? -0.08 : 0.08, routes, null, null, voiceSolo, "roll");
       routes.push(filter);
     }
 
@@ -154,7 +186,10 @@
       portamento: 0.015
     });
     instruments.sub.volume.value = -3;
-    attach(instruments.sub, buses.bass, -2, 0, routes, panners, "sub");
+    const subDrive = new T.WaveShaper(value => Math.tanh(1.65 * value) / Math.tanh(1.65), 2048);
+    instruments.sub.connect(subDrive);
+    attach(subDrive, buses.bass, -2, 0, routes, panners, "sub", voiceSolo, "sub");
+    routes.push(subDrive);
 
     instruments.brass = new I.LowBrass({
       harmonicity: PATCHES.brass.harmonicity,
@@ -166,7 +201,7 @@
     });
     const brassFilter = new T.Filter(PATCHES.brass.lowpassHz, "lowpass");
     instruments.brass.connect(brassFilter);
-    attach(brassFilter, buses.brass, PATCHES.brass.trimDb, 0, routes, panners, "brass");
+    attach(brassFilter, buses.brass, PATCHES.brass.trimDb, 0, routes, panners, "brass", voiceSolo, "brass");
     routes.push(brassFilter);
 
     instruments.metal = new I.MetalAccent({
@@ -179,7 +214,7 @@
     });
     const metalFilter = new T.Filter(PATCHES.metal.lowpassHz, "lowpass");
     instruments.metal.connect(metalFilter);
-    attach(metalFilter, buses.textures, -19, 0.12, routes, panners, "metal");
+    attach(metalFilter, buses.textures, -19, 0.12, routes, panners, "metal", voiceSolo, "metal");
     routes.push(metalFilter);
 
     instruments.rumble = new I.Rumble({
@@ -191,7 +226,7 @@
     const rumbleLow = new T.Filter(PATCHES.rumble.lowHz, "highpass");
     instruments.rumble.connect(rumbleLow);
     rumbleLow.connect(rumbleHigh);
-    attach(rumbleHigh, buses.textures, -10, 0, routes, panners, "rumble");
+    attach(rumbleHigh, buses.textures, -10, 0, routes, panners, "rumble", voiceSolo, "rumble");
     routes.push(rumbleHigh, rumbleLow);
 
     return {buses, instruments, routes, panners};
@@ -221,6 +256,8 @@
   function strikeShell(graph, time, beat, velocity) {
     const osc = graph.instruments.shell;
     const amp = graph.instruments.shellGain.gain;
+    const harmonic = graph.instruments.shellHarmonic;
+    const harmonicAmp = graph.instruments.shellHarmonicGain.gain;
     const end = time + beat * PATCHES.kick.shellFadeBeats;
     osc.frequency.cancelScheduledValues(time);
     const curve = Float32Array.from({length: 49}, (_, index) => {
@@ -228,11 +265,33 @@
       return PATCHES.kick.shellEndHz - (PATCHES.kick.shellEndHz - PATCHES.kick.shellStartHz) * Math.exp(-elapsed / PATCHES.kick.shellTau);
     });
     osc.frequency.setValueCurveAtTime(curve, time, PATCHES.kick.shellFadeBeats * beat);
+    harmonic.frequency.cancelScheduledValues(time);
+    harmonic.frequency.setValueCurveAtTime(Float32Array.from(curve, value => value * 2), time, PATCHES.kick.shellFadeBeats * beat);
+    harmonicAmp.cancelScheduledValues(time);
+    harmonicAmp.setValueAtTime(0.0001, time);
+    harmonicAmp.linearRampToValueAtTime(0.10 * velocity, time + PATCHES.kick.shellAttack);
+    harmonicAmp.exponentialRampToValueAtTime(0.0001, time + 0.31);
     amp.cancelScheduledValues(time);
     amp.setValueAtTime(0.0001, time);
-    amp.linearRampToValueAtTime(0.54 * velocity, time + PATCHES.kick.shellAttack);
-    amp.exponentialRampToValueAtTime(Math.max(0.0001, 0.54 * velocity * 0.24), time + PATCHES.kick.shellAttack + beat * PATCHES.kick.shellDecayBeats);
+    amp.linearRampToValueAtTime(0.74 * velocity, time + PATCHES.kick.shellAttack);
+    amp.exponentialRampToValueAtTime(Math.max(0.0001, 0.74 * velocity * 0.24), time + PATCHES.kick.shellAttack + beat * PATCHES.kick.shellDecayBeats);
     amp.exponentialRampToValueAtTime(0.0001, end);
+  }
+
+  function strikeRoll(graph, time, length, velocity, pan) {
+    // A growing snare-wire roll with ~18 Hz strokes before the next footfall.
+    const amp = graph.instruments.rollSwell.gain;
+    const curve = Float32Array.from({length: 384}, (_, i) => {
+      const progress = i / 383;
+      const t = progress * length;
+      const swell = 0.24 + 0.76 * progress ** 1.55;
+      const strokes = 0.5 + 0.5 * Math.cos(2 * Math.PI * 18 * t + 0.6 * Math.sin(37 * t)) ** 2;
+      return Math.max(0.0001, swell * strokes * Math.min(1, t / 0.003, (length - t) / 0.018));
+    });
+    amp.cancelScheduledValues(time);
+    amp.setValueCurveAtTime(curve, time, length);
+    amp.setValueAtTime(0.0001, time + length + 0.002);
+    graph.instruments.roll.triggerAttackRelease(length, time, clamp(velocity, 0.02, 1));
   }
 
   function scheduleBar(graph, time, index, bpm) {
@@ -243,7 +302,8 @@
     const random = seeded(Math.imul(index + 1, 2654435761));
     const drums = graph.instruments;
     const place = (name, offset, length, velocity, pan = 0, lag = 0) => {
-      hit(graph, random, name, length, time + offset * step + lag, velocity, pan);
+      if (name === "roll") strikeRoll(graph, time + offset * step + lag, length, velocity, pan);
+      else hit(graph, random, name, length, time + offset * step + lag, velocity, pan);
     };
 
     for (let foot = 0; foot < 2; foot++) {
@@ -263,7 +323,7 @@
       drums.snareBody.triggerAttackRelease(140, 0.045, at, clamp(weight * 0.55, 0.02, 1));
       place("snare", offset, 0.034, weight, side);
       place("snare", offset, 0.027, weight * 0.65, -side * 1.6, 0.012);
-      place("roll", offset + 0.68, 0.84 * beat, pedal ? 0.38 : 0.55, -side * 1.3);
+      place("roll", offset + 0.68, 0.84 * beat, pedal ? 0.25 : 0.42, -side * 1.3);
       if (accented || (pedal && foot === 0)) place("metal", offset, 0.070, pedal ? 0.075 : 0.11, side * 1.4);
       if (!pedal) {
         if (!accented && foot === 0) place("tom", offset + 1.04, 0.094, 0.34, -side);

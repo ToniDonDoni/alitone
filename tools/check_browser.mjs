@@ -46,7 +46,7 @@ const closed = new Promise(resolve => proc.once("close", resolve));
 proc.on("exit", code => {
   for (const {reject} of pending.values()) reject(new Error("Chrome exited: " + code));
 });
-const timeout = setTimeout(() => proc.kill(), 60000);
+const timeout = setTimeout(() => proc.kill(), 180000);
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 try {
   const {targetInfos} = await send("Target.getTargets");
@@ -102,7 +102,11 @@ try {
   console.log("80 BPM startup, keyboard slider, live 80 → 66 BPM on the expected bar without restart, 40 and 160 BPM bounds, mute, stop, and 320px mobile layout passed");
 
   if (process.argv.includes("--render")) {
-    for (const [bpm, duration, layer] of [[80, 3, "drums"], [80, 26, "full"], [108, 42, "full"]]) {
+    const exports = [[80, 3, "drums"], [80, 26, "full"], [108, 42, "full"]];
+    if (process.argv.includes("--stems")) {
+      for (const voice of ["kick", "shell", "tom", "snare", "roll", "metal", "rumble", "sub", "low"]) exports.push([80, 3, "stem-" + voice]);
+    }
+    for (const [bpm, duration, layer] of exports) {
       const {data, peak} = await evaluate(`(async () => {
         const rate = 48000;
         const offline = new OfflineAudioContext(2, rate * ${duration}, rate);
@@ -118,6 +122,23 @@ try {
           const play = synth.play.bind(synth);
           synth.play = (buffer, ...args) => {
             if (!harmonic.has(buffer)) play(buffer, ...args);
+          };
+        } else if ("${layer}".startsWith("stem-")) {
+          const wanted = "${layer}".slice(5);
+          const family = {
+            kick: synth.kicks, shell: synth.shells, tom: synth.toms,
+            snare: synth.snares, roll: synth.rolls, metal: synth.metal, rumble: synth.rumble
+          };
+          const made = new Map();
+          const originalNote = synth.note.bind(synth);
+          synth.note = (kind, ...args) => {
+            const buffer = originalNote(kind, ...args);
+            made.set(buffer, kind);
+            return buffer;
+          };
+          const originalPlay = synth.play.bind(synth);
+          synth.play = (buffer, ...args) => {
+            if ((family[wanted] || []).includes(buffer) || made.get(buffer) === wanted) originalPlay(buffer, ...args);
           };
         }
         for (let i=0; i*synth.barDuration < ${duration}; i++) synth.scheduleBar(i, i*synth.barDuration);
