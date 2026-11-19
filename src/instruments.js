@@ -19,6 +19,8 @@
   class Kick extends T.MembraneSynth {}
   class Beater extends T.NoiseSynth {}
   class KickBody extends T.NoiseSynth {}
+  class Footstep extends T.MembraneSynth {}
+  class StepSurface extends T.NoiseSynth {}
   class Shell extends T.Oscillator {}
   class Tom extends T.MembraneSynth {}
   class Snare extends T.NoiseSynth {}
@@ -30,7 +32,7 @@
   class Rumble extends T.NoiseSynth {}
 
   window.MarchInstruments = Object.freeze({
-    Kick, Beater, KickBody, Shell, Tom, Snare, SnareBody,
+    Kick, Beater, KickBody, Footstep, StepSurface, Shell, Tom, Snare, SnareBody,
     SnareRoll, SubBass, LowBrass, MetalAccent, Rumble
   });
 })();

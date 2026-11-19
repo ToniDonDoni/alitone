@@ -47,7 +47,9 @@ jobs:
           grep -q "function strikeRoll" references/march-of-the-fallen-tone.html
           grep -q "shellHarmonic" references/march-of-the-fallen-tone.html
       - name: Rendered audio analysis
-        run: python3 tools/compare_rendered_audio.py
+        run: |
+          python3 tools/compare_rendered_audio.py
+          python3 tools/compare_step_transients.py
       - name: Commit generated standalone HTML
         run: |
           if ! git diff --quiet -- references/march-of-the-fallen-tone.html; then

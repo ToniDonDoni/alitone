@@ -18,6 +18,11 @@
       shellStartHz: 36, shellEndHz: 59, shellTau: 0.170,
       shellAttack: 0.037, shellDecayBeats: 0.58, shellFadeBeats: 0.84
     },
+    step: {
+      targetHz: 118, octaveMultiplier: 1.35, pitchDecay: 0.032,
+      attack: 0.001, decay: 0.108, surfaceDecay: 0.090, length: 0.126,
+      delay: 0.012, bodyTrimDb: -7, surfaceTrimDb: 14, clackTrimDb: 4
+    },
     tom: {targetHz: 68, octaveMultiplier: 1.45, pitchDecay: 0.029, decay: 0.094, trimDb: 2},
     snare: {attack: 0.001, decay: 0.034, rollBands: [{hz: 705, q: 1.15}, {hz: 1690, q: 1.35}], rollAttack: 0.001, rollDecay: 0.01, rollSustain: 1},
     sub: {pulseAttack: 0.065, pedalAttack: 0.110, release: 0.050, filterHz: 145},
@@ -69,7 +74,7 @@
     output.connect(destination);
 
     const voiceBuses = {
-      kick: "drums", beater: "drums", kickBody: "drums", shell: "drums",
+      kick: "drums", beater: "drums", kickBody: "drums", step: "drums", shell: "drums",
       tom: "drums", snare: "drums", snareBody: "drums", roll: "drums",
       sub: "bass", brass: "brass", metal: "textures", rumble: "textures"
     };
@@ -138,6 +143,35 @@
     instruments.kickBody.connect(kickBodyFilter);
     attach(kickBodyFilter, voiceGains.kickBody, PATCHES.kick.bodyTrimDb, 0, routes, null, null, voiceSolo, "kickBody");
     routes.push(kickBodyFilter);
+
+    // A distinct heel/boot impact fills the woody, lightly ringing 95-520 Hz
+    // band heard after the kick attack in the original Revised rendering.
+    // Both parts feed one independent, muteable Step track.
+    instruments.step = new I.Footstep({
+      pitchDecay: PATCHES.step.pitchDecay,
+      octaves: PATCHES.step.octaveMultiplier,
+      oscillator: {type: "sine"},
+      envelope: {
+        attack: PATCHES.step.attack, decay: PATCHES.step.decay,
+        sustain: 0, release: 0.014
+      }
+    });
+    instruments.step.volume.value = -3;
+    attach(instruments.step, voiceGains.step, PATCHES.step.bodyTrimDb, 0, routes, panners, "step", voiceSolo, "step");
+    instruments.stepSurface = new I.StepSurface({
+      noise: {type: "white"},
+      envelope: {
+        attack: 0.001, decay: PATCHES.step.surfaceDecay,
+        sustain: 0, release: 0.012
+      }
+    });
+    const sole = new T.Filter({frequency: 315, type: "bandpass", Q: 0.85});
+    const heelEdge = new T.Filter({frequency: 760, type: "bandpass", Q: 1.15});
+    instruments.stepSurface.connect(sole);
+    instruments.stepSurface.connect(heelEdge);
+    attach(sole, voiceGains.step, PATCHES.step.surfaceTrimDb, -0.06, routes, null, null, voiceSolo, "step");
+    attach(heelEdge, voiceGains.step, PATCHES.step.clackTrimDb, 0.06, routes, null, null, voiceSolo, "step");
+    routes.push(sole, heelEdge);
 
     instruments.shell = new I.Shell(PATCHES.kick.shellStartHz, "sine");
     instruments.shellGain = new T.Gain(0.0001);
@@ -272,6 +306,11 @@
     const node = graph.instruments[instrument];
     const variation = 0.97 + 0.06 * random();
     if (instrument === "kick") node.triggerAttackRelease(PATCHES.kick.targetHz, duration, time, clamp(velocity * variation, 0.02, 1));
+    else if (instrument === "step") {
+      const level = clamp(velocity * variation, 0.02, 1);
+      node.triggerAttackRelease(PATCHES.step.targetHz, duration, time, level);
+      graph.instruments.stepSurface.triggerAttackRelease(PATCHES.step.surfaceDecay, time, level);
+    }
     else if (instrument === "tom") node.triggerAttackRelease(PATCHES.tom.targetHz, duration, time, clamp(velocity * variation, 0.02, 1));
     else if (instrument === "kickBody" || instrument === "snare" || instrument === "roll" || instrument === "rumble") node.triggerAttackRelease(duration, time, clamp(velocity * variation, 0.02, 1));
     else if (instrument === "metal") {
@@ -372,6 +411,8 @@
       graph.panners.snareBody.pan.setValueAtTime(side, at);
       record("kick", at, 0.060);
       drums.kick.triggerAttackRelease(PATCHES.kick.targetHz, 0.060, at, clamp(weight * variation, 0.02, 1));
+      // The sole lands just after the drum attack, as a marching foot would.
+      place("step", offset + PATCHES.step.delay / step, PATCHES.step.length, weight * 0.78, side * 0.6);
       record("beater", at, PATCHES.kick.noiseDecay);
       drums.beater.triggerAttackRelease(PATCHES.kick.noiseDecay, at, clamp(weight, 0.02, 1));
       record("kickBody", at, PATCHES.kick.bodyDecay);

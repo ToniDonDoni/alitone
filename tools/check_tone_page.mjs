@@ -75,8 +75,8 @@ try {
   await call("Emulation.setDeviceMetricsOverride", {width: 1200, height: 820, deviceScaleFactor: 1, mobile: false});
   await call("Page.navigate", {url: pathToFileURL(path.join(root, "references", "march-of-the-fallen-tone.html")).href});
   for (let index = 0; index < 100 && !(await evaluate("Boolean(window.MarchLab)")); index++) await delay(50);
-  await requireCondition("Boolean(window.MarchInstruments) && Object.keys(MarchInstruments).length === 12 && MarchInstruments.Kick.prototype instanceof Tone.MembraneSynth && MarchInstruments.Beater.prototype instanceof Tone.NoiseSynth && MarchInstruments.SubBass.prototype instanceof Tone.MonoSynth && MarchInstruments.LowBrass.prototype instanceof Tone.FMSynth && MarchInstruments.MetalAccent.prototype instanceof Tone.MetalSynth");
-  await requireCondition("MarchLab.arrangement === MarchArrangement && MarchArrangement.tracks.length === 12 && MarchArrangement.eventsFor(80).kick.length === 32 && MarchArrangement.eventsFor(80).roll.length === 32 && document.querySelector('#scope').getBoundingClientRect().height >= 330");
+  await requireCondition("Boolean(window.MarchInstruments) && Object.keys(MarchInstruments).length === 14 && MarchInstruments.Kick.prototype instanceof Tone.MembraneSynth && MarchInstruments.Beater.prototype instanceof Tone.NoiseSynth && MarchInstruments.SubBass.prototype instanceof Tone.MonoSynth && MarchInstruments.LowBrass.prototype instanceof Tone.FMSynth && MarchInstruments.MetalAccent.prototype instanceof Tone.MetalSynth");
+  await requireCondition("MarchLab.arrangement === MarchArrangement && MarchArrangement.tracks.length === 13 && MarchArrangement.eventsFor(80).step.length === 32 && MarchArrangement.eventsFor(80).kick.length === 32 && MarchArrangement.eventsFor(80).roll.length === 32 && document.querySelector('#scope').getBoundingClientRect().height >= 330");
   await requireCondition("Boolean(MarchLab) && MarchLab.version === 'Tone.js 15.1.22' && Tone.version === '15.1.22' && Tone.MembraneSynth && Tone.NoiseSynth && Tone.MonoSynth && Tone.FMSynth && Tone.MetalSynth && Tone.Oscillator");
   console.log("Desktop UI state", await evaluate("JSON.stringify({width:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,tempo:tempo.value,tempoText:document.querySelector('#tempo-value').value,canvasHeight:document.querySelector('#scope').getBoundingClientRect().height})"));
   await requireCondition("tempo.type === 'range' && tempo.min === '40' && tempo.max === '160' && tempo.value === '80' && document.querySelector('#tempo-value').value === '80 BPM'");
@@ -89,7 +89,7 @@ try {
   await delay(550);
   await requireCondition("Tone.getContext().state === 'running' && MarchLab.graph && MarchLab.transport.state === 'started' && MarchLab.transport.timeSignature === 2 && document.querySelector('#status').textContent.includes('Играет')");
   await requireCondition("['MembraneSynth','NoiseSynth','Oscillator','MonoSynth','FMSynth','MetalSynth'].every(kind => Object.values(MarchLab.graph.instruments).some(instrument => instrument.name === kind))");
-  await requireCondition("Boolean(MarchLab.graph.instruments.kick.output && MarchLab.graph.instruments.shell.output && MarchLab.graph.instruments.snare.output && MarchLab.graph.instruments.sub.output && MarchLab.graph.instruments.brass.output && MarchLab.graph.instruments.metal.output)");
+  await requireCondition("Boolean(MarchLab.graph.instruments.kick.output && MarchLab.graph.instruments.step.output && MarchLab.graph.instruments.stepSurface.output && MarchLab.graph.instruments.shell.output && MarchLab.graph.instruments.snare.output && MarchLab.graph.instruments.sub.output && MarchLab.graph.instruments.brass.output && MarchLab.graph.instruments.metal.output)");
   // Real pointer input must mute a voice in the AUDIO graph, not only its canvas paint.
   await requireCondition("MarchLab.mutedTracks.length === 0 && MarchLab.arrangement.tracks.every(track => MarchLab.graph.voiceGains[track.key].gain.value === 1)");
   const clickTrack = async (name, useTouch = false) => {
@@ -113,6 +113,12 @@ try {
       await call("Input.dispatchMouseEvent", {...pos, type: "mouseReleased", button: "left", clickCount: 1});
     }
   };
+  await clickTrack("step");
+  await delay(110);
+  await requireCondition("MarchLab.mutedTracks.includes('step') && MarchLab.graph.voiceGains.step.gain.value < 0.01 && MarchLab.graph.voiceGains.kick.gain.value > 0.99 && MarchArrangement.lastFrame.mutedTracks.includes('step')");
+  await clickTrack("step");
+  await delay(110);
+  await requireCondition("!MarchLab.mutedTracks.includes('step') && MarchLab.graph.voiceGains.step.gain.value > 0.99 && !MarchArrangement.lastFrame.mutedTracks.includes('step')");
   await clickTrack("kick");
   await delay(110);
   await requireCondition("MarchLab.mutedTracks.includes('kick') && MarchLab.graph.voiceGains.kick.gain.value < 0.01 && MarchLab.graph.voiceGains.snare.gain.value > 0.99 && MarchArrangement.lastFrame.mutedTracks.includes('kick')");
@@ -181,7 +187,7 @@ try {
     return {count: actual.length, voices: [...new Set(actual.map(event => event.name))], mismatches};
   })()`);
   console.log("Scheduled audio triggers vs displayed clips", JSON.stringify(match));
-  if (match.count < 17 || match.voices.length < 9 || match.mismatches.length) {
+  if (match.count < 19 || match.voices.length < 10 || !match.voices.includes("step") || match.mismatches.length) {
     throw new Error("Visual instrument clips differ from actual scheduled audio events: " + JSON.stringify(match));
   }
 
@@ -241,6 +247,25 @@ try {
     throw new Error("Muted kick voice still emitted audio: " + JSON.stringify(mutedAudio));
   }
 
+  // Step must be independently audible and completely silent when muted.
+  const stepProbe = await evaluate(`(async () => {
+    const probe = async mutedTracks => {
+      const buffer = await MarchLab.renderOffline({bpm:80,bars:1,solo:"step",mutedTracks,sampleRate:24000});
+      const channel = buffer.getChannelData(0);
+      let peak = 0, energy = 0;
+      for (const value of channel) {
+        peak = Math.max(peak, Math.abs(value));
+        energy += value * value;
+      }
+      return {peak, rms: Math.sqrt(energy / channel.length)};
+    };
+    return {enabled:await probe([]), muted:await probe(["step"])};
+  })()`);
+  console.log("Step impact audio stem and mute", JSON.stringify(stepProbe));
+  if (!(stepProbe.enabled.peak > 0.005 && stepProbe.enabled.rms > 0.0005 && stepProbe.muted.peak < 0.0001)) {
+    throw new Error("Step instrument failed to render or mute: " + JSON.stringify(stepProbe));
+  }
+
   const renderExpression = (bpm, bars, solo) => `(async()=>{const buffer=await MarchLab.renderOffline({bpm:${bpm},bars:${bars},solo:${solo ? JSON.stringify(solo) : "null"},sampleRate:48000});const left=buffer.getChannelData(0),right=buffer.getChannelData(1);const pcm=new Float32Array(left.length*2);let peak=0;for(let i=0;i<left.length;i++){pcm[i*2]=left[i];pcm[i*2+1]=right[i];peak=Math.max(peak,Math.abs(left[i]),Math.abs(right[i]));}const bytes=new Uint8Array(pcm.buffer);let chunks=[];for(let i=0;i<bytes.length;i+=16384)chunks.push(String.fromCharCode(...bytes.subarray(i,i+16384)));return {data:btoa(chunks.join('')),peak,length:left.length}})()`;
   for (const [bpm, bars, solo, filename] of [
     [80, 2, "drums", "tone-80-2bars-drums-stereo.f32"],
@@ -253,7 +278,7 @@ try {
     console.log("Tone.Offline rendered " + filename + " at " + bpm + " BPM, " + result.length + " stereo frames, peak " + result.peak.toFixed(3) + ", " + byteCount + " bytes.");
   }
   if (process.argv.includes("--stems")) {
-    for (const voice of ["kick", "shell", "tom", "snare", "roll", "metal", "rumble", "sub", "brass", "beater", "kickBody", "snareBody"]) {
+    for (const voice of ["kick", "step", "shell", "tom", "snare", "roll", "metal", "rumble", "sub", "brass", "beater", "kickBody", "snareBody"]) {
       const result = await evaluate(renderExpression(80, 2, voice));
       if (result.peak < 0.0001) throw new Error("Silent voice stem: " + voice);
       const bytes = interleaveAndWrite("tone-80-2bars-stem-" + voice + "-stereo.f32", result.data, result.peak);

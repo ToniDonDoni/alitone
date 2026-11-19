@@ -11,6 +11,7 @@
     {key: "kick", label: "Kick", icon: "◉", color: "#ff9274"},
     {key: "beater", label: "Beater", icon: "✳", color: "#ffb19d"},
     {key: "kickBody", label: "Body", icon: "◌", color: "#f8bd81"},
+    {key: "step", label: "Step", icon: "▰", color: "#f1bb75"},
     {key: "shell", label: "Shell", icon: "◎", color: "#ffd096"},
     {key: "snare", label: "Snare", icon: "▣", color: "#dfacfc"},
     {key: "snareBody", label: "S.Body", icon: "◈", color: "#b8a5ff"},
@@ -56,6 +57,7 @@
         add("kick", step, 0.060 / stepSeconds, weight);
         add("beater", step, 0.016 / stepSeconds, weight);
         add("kickBody", step, 0.047 / stepSeconds, weight * 0.8);
+        add("step", step + 0.012 / stepSeconds, 0.126 / stepSeconds, weight * 0.78);
         add("shell", step + 0.052 / stepSeconds, 0.84 * beat / stepSeconds, weight);
         add("snareBody", step, 0.045 / stepSeconds, weight * 0.55);
         add("snare", step, 0.034 / stepSeconds, weight);
