@@ -100,10 +100,11 @@ async function main() {
   }));
 
   const render = async voice => {
-    const options = JSON.stringify({bpm: BPM, bars: BARS, solo: voice, sampleRate: RATE});
+    const options = JSON.stringify({bpm: BPM, bars: BARS, solo: voice, isolatedVoice: voice, includeDiagnostics: true, sampleRate: RATE});
     const expression = "(async()=>{" +
       "const started=performance.now();" +
-      "const audio=await MarchLab.renderOffline(" + options + ");" +
+      "const rendered=await MarchLab.renderOffline(" + options + ");" +
+      "const audio=rendered.audio;" +
       "const elapsedMs=performance.now()-started;" +
       "let peak=0;" +
       "for(let c=0;c<audio.numberOfChannels;c++){" +
@@ -111,10 +112,24 @@ async function main() {
       "for(let i=0;i<samples.length;i+=128)peak=Math.max(peak,Math.abs(samples[i]));" +
       "}" +
       "return {elapsedMs,frames:audio.length,channels:audio.numberOfChannels," +
-      "durationSeconds:audio.duration,sampledPeak:peak};" +
+      "durationSeconds:audio.duration,sampledPeak:peak,diagnostics:rendered.diagnostics};" +
       "})()";
     const start = performance.now();
     const stats = await evaluate(expression);
+    const expectedLayers = {
+      step: ["step", "stepSurface"],
+      shell: ["shell", "shellGain", "shellHarmonic", "shellHarmonicGain"],
+      roll: ["roll", "rollSwell"],
+      brass: ["brass", "brassHarmonics"],
+      metal: ["metal", "metalMode"]
+    };
+    const expected = expectedLayers[voice] || [voice];
+    const actual = stats.diagnostics?.instrumentKeys || [];
+    if (actual.length !== expected.length || !expected.every(name => actual.includes(name)) ||
+      JSON.stringify(stats.diagnostics.voiceGainKeys) !== JSON.stringify([voice]) ||
+      stats.diagnostics.busKeys.length !== 1) {
+      throw new Error("Isolated graph contains unexpected instruments: " + JSON.stringify({voice, expected, actual, diagnostics: stats.diagnostics}));
+    }
     return {...stats, hostWallMs: performance.now() - start};
   };
 
@@ -159,8 +174,8 @@ async function main() {
     runner: process.env.RUNNER_NAME || "local", node: process.version,
     durationSeconds: SECONDS, sampleRate: RATE, bpm: BPM,
     repeats: REPEATS, voiceCount: voices.length,
-    method: "MarchLab.renderOffline({solo: voice}) in offline Chromium",
-    caveat: "The existing solo renderer still constructs and schedules the complete instrument graph. Only one voice is audible; timings include graph-wide overhead.",
+    method: "MarchLab.renderOffline({solo: voice, isolatedVoice: voice}) in offline Chromium",
+    caveat: "Only the selected instrument is built and scheduled. Its family bus and shared master/room processing remain.",
     rows
   };
   const csv = "voice,median_ms,min_ms,max_ms,median_host_ms\n" +
@@ -170,8 +185,8 @@ async function main() {
     "| Voice | Median (ms) | Min (ms) | Max (ms) | CDP wall (ms) |\n" +
     "| --- | ---: | ---: | ---: | ---: |\n" +
     rows.map(r => "| " + [r.voice, r.medianMs, r.minMs, r.maxMs, r.medianHostMs].join(" | ") + " |").join("\n") + "\n\n" +
-    "**Caveat:** Current solo mode still constructs and schedules the whole graph;\n" +
-    "these are real production solo-output times, not bare standalone-synth times.\n";
+    "**Isolation:** Only the selected instrument is instantiated and scheduled.\n" +
+    "Its family bus and shared master/room effects remain for consistency.\n";
   fs.writeFileSync(path.join(OUT, "tone-offline-16s.json"), JSON.stringify(report, null, 2) + "\n");
   fs.writeFileSync(path.join(OUT, "tone-offline-16s.csv"), csv);
   fs.writeFileSync(path.join(OUT, "tone-offline-16s.md"), md);
