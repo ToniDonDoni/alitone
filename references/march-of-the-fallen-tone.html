@@ -122,15 +122,15 @@
     kick: {
       targetHz: 33, octaveMultiplier: 6.36, pitchDecay: 0.023,
       attack: 0.001, decay: 0.060, noiseDecay: 0.016,
-      beaterBands: [{hz: 720, q: 0.95, trimDb: 5.5}, {hz: 1880, q: 1.25, trimDb: 1.5}],
-      bodyHz: 193, bodyQ: 1.15, bodyDecay: 0.047, bodyVelocity: 0.80, bodyTrimDb: 12,
+      beaterBands: [{hz: 720, q: 0.95, trimDb: 13.5}, {hz: 1880, q: 1.25, trimDb: 9.5}],
+      bodyHz: 193, bodyQ: 1.15, bodyDecay: 0.047, bodyVelocity: 0.80, bodyTrimDb: 15,
       shellStartHz: 36, shellEndHz: 59, shellTau: 0.170,
       shellAttack: 0.037, shellDecayBeats: 0.58, shellFadeBeats: 0.84
     },
-    tom: {targetHz: 68, octaveMultiplier: 1.74, pitchDecay: 0.029, decay: 0.094, trimDb: 2},
+    tom: {targetHz: 68, octaveMultiplier: 1.45, pitchDecay: 0.029, decay: 0.094, trimDb: 2},
     snare: {attack: 0.001, decay: 0.034, rollBands: [{hz: 705, q: 1.15}, {hz: 1690, q: 1.35}], rollAttack: 0.001, rollDecay: 0.01, rollSustain: 1},
     sub: {pulseAttack: 0.065, pedalAttack: 0.110, release: 0.050, filterHz: 145},
-    brass: {harmonicity: 2, modulationIndex: 1.2, lowpassHz: 680, attack: 0.040, decay: 0.120, sustain: 0.65, release: 0.060, trimDb: -6},
+    brass: {harmonicity: 1, modulationIndex: 2.2, lowpassHz: 680, attack: 0.040, decay: 0.120, sustain: 0.65, release: 0.060, trimDb: -1},
     metal: {frequency: 70, modulationIndex: 2, decay: 0.070, lowpassHz: 2400},
     rumble: {lowHz: 38, highHz: 95, duration: 2.4},
     master: {lowpassHz: 2930, edgeHz: 3510, compressionDb: -7.8, ratio: 3, limitDb: -1.2}
@@ -263,7 +263,7 @@
       noise: {type: "white"},
       envelope: {attack: PATCHES.snare.attack, decay: PATCHES.snare.decay, sustain: 0, release: 0.012}
     });
-    instruments.snare.volume.value = 4;
+    instruments.snare.volume.value = 7;
     for (const [index, band] of PATCHES.snare.rollBands.entries()) {
       const filter = new T.Filter({frequency: band.hz, type: "bandpass", Q: band.q});
       instruments.snare.connect(filter);
@@ -278,7 +278,7 @@
       noise: {type: "white"},
       envelope: {attack: PATCHES.snare.rollAttack, decay: PATCHES.snare.rollDecay, sustain: PATCHES.snare.rollSustain, release: 0.09}
     });
-    instruments.roll.volume.value = 0;
+    instruments.roll.volume.value = 6;
     instruments.rollSwell = new T.Gain(0.0001);
     instruments.roll.connect(instruments.rollSwell);
     for (const [index, band] of PATCHES.snare.rollBands.entries()) {
@@ -327,16 +327,23 @@
     attach(metalFilter, buses.textures, -19, 0.12, routes, panners, "metal", voiceSolo, "metal");
     routes.push(metalFilter);
 
+    // The reference has a prominent low, inharmonic 326 Hz metal-shell mode.
+    instruments.metalMode = new T.Synth({
+      oscillator: {type: "sine"},
+      envelope: {attack: 0.001, decay: 0.078, sustain: 0, release: 0.025}
+    });
+    attach(instruments.metalMode, buses.textures, -6, 0.12, routes, null, null, voiceSolo, "metal");
+
     instruments.rumble = new I.Rumble({
       noise: {type: "brown"},
       envelope: {attack: 0.24, decay: 0.3, sustain: 0.55, release: 0.65}
     });
-    instruments.rumble.volume.value = -5;
+    instruments.rumble.volume.value = 0;
     const rumbleHigh = new T.Filter(PATCHES.rumble.highHz, "lowpass");
     const rumbleLow = new T.Filter(PATCHES.rumble.lowHz, "highpass");
     instruments.rumble.connect(rumbleLow);
     rumbleLow.connect(rumbleHigh);
-    attach(rumbleHigh, buses.textures, -10, 0, routes, panners, "rumble", voiceSolo, "rumble");
+    attach(rumbleHigh, buses.textures, 0, 0, routes, panners, "rumble", voiceSolo, "rumble");
     routes.push(rumbleHigh, rumbleLow);
 
     return {buses, instruments, routes, panners};
@@ -357,7 +364,10 @@
     if (instrument === "kick") node.triggerAttackRelease(PATCHES.kick.targetHz, duration, time, clamp(velocity * variation, 0.02, 1));
     else if (instrument === "tom") node.triggerAttackRelease(PATCHES.tom.targetHz, duration, time, clamp(velocity * variation, 0.02, 1));
     else if (instrument === "kickBody" || instrument === "snare" || instrument === "roll" || instrument === "rumble") node.triggerAttackRelease(duration, time, clamp(velocity * variation, 0.02, 1));
-    else if (instrument === "metal") node.triggerAttackRelease(duration, time, clamp(velocity * variation, 0.02, 1));
+    else if (instrument === "metal") {
+      node.triggerAttackRelease(duration, time, clamp(velocity * variation, 0.02, 1));
+      graph.instruments.metalMode.triggerAttackRelease(326, duration, time, clamp(velocity * variation, 0.02, 1));
+    }
     else if (instrument === "sub") node.triggerAttackRelease(duration.note, duration.seconds, time, clamp(velocity * variation, 0.02, 1));
     else if (instrument === "brass") node.triggerAttackRelease(duration.note, duration.seconds, time, clamp(velocity * variation, 0.02, 1));
     if (graph.panners[instrument]) graph.panners[instrument].pan.setValueAtTime(pan, time);
