@@ -51,7 +51,7 @@
     return node;
   }
 
-  function createGraph(destination, solo = null, volumeScale = 1) {
+  function createGraph(destination, solo = null, volumeScale = 1, mutedNames = []) {
     const masterA = new T.Filter(PATCHES.master.lowpassHz, "lowpass");
     const masterB = new T.Filter(PATCHES.master.edgeHz, "lowpass");
     const compressor = new T.Compressor({threshold: PATCHES.master.compressionDb, ratio: PATCHES.master.ratio, attack: 0.003, release: 0.135, knee: 10});
@@ -83,6 +83,14 @@
     };
     Object.values(buses).forEach(bus => bus.connect(masterA));
     const routes = [masterA, masterB, compressor, limiter, peakGuard, output, ...Object.values(buses)];
+    // Separate per-voice gains before the family bus, master dynamics and room taps.
+    // This mutes every oscillator/noise layer of a voice, including its reflections.
+    const voiceGains = Object.fromEntries(Object.entries(voiceBuses).map(([name, family]) => {
+      const gain = new T.Gain(mutedNames.includes(name) ? 0 : 1);
+      gain.connect(buses[family]);
+      routes.push(gain);
+      return [name, gain];
+    }));
 
     // Band-limited early reflections match the reference's three short room taps.
     const room = new T.Filter({frequency: 980, type: "bandpass", Q: 0.5});
@@ -108,7 +116,7 @@
       envelope: {attack: PATCHES.kick.attack, decay: PATCHES.kick.decay, sustain: 0, release: 0.015}
     });
     instruments.kick.volume.value = 1;
-    attach(instruments.kick, buses.drums, -1, 0, routes, panners, "kick", voiceSolo, "kick");
+    attach(instruments.kick, voiceGains.kick, -1, 0, routes, panners, "kick", voiceSolo, "kick");
 
     instruments.beater = new I.Beater({
       noise: {type: "white"},
@@ -118,7 +126,7 @@
     for (const band of PATCHES.kick.beaterBands) {
       const filter = new T.Filter({frequency: band.hz, type: "bandpass", Q: band.q});
       instruments.beater.connect(filter);
-      attach(filter, buses.drums, band.trimDb, 0, routes, null, null, voiceSolo, "beater");
+      attach(filter, voiceGains.beater, band.trimDb, 0, routes, null, null, voiceSolo, "beater");
       routes.push(filter);
     }
 
@@ -128,18 +136,18 @@
     });
     const kickBodyFilter = new T.Filter({frequency: PATCHES.kick.bodyHz, type: "bandpass", Q: PATCHES.kick.bodyQ});
     instruments.kickBody.connect(kickBodyFilter);
-    attach(kickBodyFilter, buses.drums, PATCHES.kick.bodyTrimDb, 0, routes, null, null, voiceSolo, "kickBody");
+    attach(kickBodyFilter, voiceGains.kickBody, PATCHES.kick.bodyTrimDb, 0, routes, null, null, voiceSolo, "kickBody");
     routes.push(kickBodyFilter);
 
     instruments.shell = new I.Shell(PATCHES.kick.shellStartHz, "sine");
     instruments.shellGain = new T.Gain(0.0001);
     instruments.shell.connect(instruments.shellGain);
-    attach(instruments.shellGain, buses.drums, -0.5, 0, routes, panners, "shell", voiceSolo, "shell");
+    attach(instruments.shellGain, voiceGains.shell, -0.5, 0, routes, panners, "shell", voiceSolo, "shell");
     instruments.shell.start();
     instruments.shellHarmonic = new I.Shell(PATCHES.kick.shellStartHz * 2, "sine");
     instruments.shellHarmonicGain = new T.Gain(0.0001);
     instruments.shellHarmonic.connect(instruments.shellHarmonicGain);
-    attach(instruments.shellHarmonicGain, buses.drums, -0.5, 0, routes, null, null, voiceSolo, "shell");
+    attach(instruments.shellHarmonicGain, voiceGains.shell, -0.5, 0, routes, null, null, voiceSolo, "shell");
     instruments.shellHarmonic.start();
 
     instruments.tom = new I.Tom({
@@ -148,7 +156,7 @@
       oscillator: {type: "sine"},
       envelope: {attack: 0.002, decay: PATCHES.tom.decay, sustain: 0, release: 0.02}
     });
-    attach(instruments.tom, buses.drums, PATCHES.tom.trimDb + 2, 0, routes, panners, "tom", voiceSolo, "tom");
+    attach(instruments.tom, voiceGains.tom, PATCHES.tom.trimDb + 2, 0, routes, panners, "tom", voiceSolo, "tom");
 
     instruments.snare = new I.Snare({
       noise: {type: "white"},
@@ -158,12 +166,12 @@
     for (const [index, band] of PATCHES.snare.rollBands.entries()) {
       const filter = new T.Filter({frequency: band.hz, type: "bandpass", Q: band.q});
       instruments.snare.connect(filter);
-      attach(filter, buses.drums, index === 0 ? 1.5 : -0.5, index === 0 ? 0.08 : -0.08, routes, null, null, voiceSolo, "snare");
+      attach(filter, voiceGains.snare, index === 0 ? 1.5 : -0.5, index === 0 ? 0.08 : -0.08, routes, null, null, voiceSolo, "snare");
       routes.push(filter);
     }
     const snareBody = new I.SnareBody({pitchDecay: 0.012, octaves: 1.35, oscillator: {type: "sine"}, envelope: {attack: 0.001, decay: 0.045, sustain: 0, release: 0.01}});
     instruments.snareBody = snareBody;
-    attach(snareBody, buses.drums, 8, 0, routes, panners, "snareBody", voiceSolo, "snareBody");
+    attach(snareBody, voiceGains.snareBody, 8, 0, routes, panners, "snareBody", voiceSolo, "snareBody");
 
     instruments.roll = new I.SnareRoll({
       noise: {type: "white"},
@@ -175,7 +183,7 @@
     for (const [index, band] of PATCHES.snare.rollBands.entries()) {
       const filter = new T.Filter({frequency: band.hz, type: "bandpass", Q: band.q});
       instruments.rollSwell.connect(filter);
-      attach(filter, buses.drums, index === 0 ? 1.5 : -0.5, index === 0 ? -0.08 : 0.08, routes, null, null, voiceSolo, "roll");
+      attach(filter, voiceGains.roll, index === 0 ? 1.5 : -0.5, index === 0 ? -0.08 : 0.08, routes, null, null, voiceSolo, "roll");
       routes.push(filter);
     }
 
@@ -189,7 +197,7 @@
     instruments.sub.volume.value = -3;
     const subDrive = new T.WaveShaper(value => Math.tanh(1.65 * value) / Math.tanh(1.65), 2048);
     instruments.sub.connect(subDrive);
-    attach(subDrive, buses.bass, -2, 0, routes, panners, "sub", voiceSolo, "sub");
+    attach(subDrive, voiceGains.sub, -2, 0, routes, panners, "sub", voiceSolo, "sub");
     routes.push(subDrive);
 
     instruments.brass = new I.LowBrass({
@@ -202,7 +210,7 @@
     });
     const brassFilter = new T.Filter(PATCHES.brass.lowpassHz, "lowpass");
     instruments.brass.connect(brassFilter);
-    attach(brassFilter, buses.brass, PATCHES.brass.trimDb, 0, routes, panners, "brass", voiceSolo, "brass");
+    attach(brassFilter, voiceGains.brass, PATCHES.brass.trimDb, 0, routes, panners, "brass", voiceSolo, "brass");
     routes.push(brassFilter);
 
     // Tone.FMSynth supplies the breathy fundamental; a separate upstream Tone.Synth
@@ -213,7 +221,7 @@
     });
     const harmonicFilter = new T.Filter(PATCHES.brass.lowpassHz, "lowpass");
     instruments.brassHarmonics.connect(harmonicFilter);
-    attach(harmonicFilter, buses.brass, -12, 0, routes, null, null, voiceSolo, "brass");
+    attach(harmonicFilter, voiceGains.brass, -12, 0, routes, null, null, voiceSolo, "brass");
     routes.push(harmonicFilter);
 
     instruments.metal = new I.MetalAccent({
@@ -226,7 +234,7 @@
     });
     const metalFilter = new T.Filter(PATCHES.metal.lowpassHz, "lowpass");
     instruments.metal.connect(metalFilter);
-    attach(metalFilter, buses.textures, -19, 0.12, routes, panners, "metal", voiceSolo, "metal");
+    attach(metalFilter, voiceGains.metal, -19, 0.12, routes, panners, "metal", voiceSolo, "metal");
     routes.push(metalFilter);
 
     // The reference has a prominent low, inharmonic 326 Hz metal-shell mode.
@@ -234,7 +242,7 @@
       oscillator: {type: "sine"},
       envelope: {attack: 0.001, decay: 0.078, sustain: 0, release: 0.025}
     });
-    attach(instruments.metalMode, buses.textures, 2, 0.12, routes, null, null, voiceSolo, "metal");
+    attach(instruments.metalMode, voiceGains.metal, 2, 0.12, routes, null, null, voiceSolo, "metal");
 
     instruments.rumble = new I.Rumble({
       noise: {type: "brown"},
@@ -245,10 +253,10 @@
     const rumbleLow = new T.Filter(PATCHES.rumble.lowHz, "highpass");
     instruments.rumble.connect(rumbleLow);
     rumbleLow.connect(rumbleHigh);
-    attach(rumbleHigh, buses.textures, 0, 0, routes, panners, "rumble", voiceSolo, "rumble");
+    attach(rumbleHigh, voiceGains.rumble, 0, 0, routes, panners, "rumble", voiceSolo, "rumble");
     routes.push(rumbleHigh, rumbleLow);
 
-    return {buses, instruments, routes, panners};
+    return {buses, instruments, routes, panners, voiceGains};
   }
 
   function disposeGraph(graph) {
@@ -397,13 +405,13 @@
     }
   }
 
-  async function renderOffline({bpm = 80, bars = 2, solo = null, sampleRate = 48000} = {}) {
+  async function renderOffline({bpm = 80, bars = 2, solo = null, mutedTracks: offlineMuted = [], sampleRate = 48000} = {}) {
     const duration = bars * QUARTER_NOTES_PER_BAR * 60 / bpm + 0.12;
     let graph;
     const buffer = await T.Offline(({transport}) => {
       transport.timeSignature = QUARTER_NOTES_PER_BAR;
       transport.bpm.value = bpm;
-      graph = createGraph(T.getContext().destination, solo, 1);
+      graph = createGraph(T.getContext().destination, solo, 1, offlineMuted);
       let bar = 0;
       transport.scheduleRepeat(time => scheduleBar(graph, time, bar++, bpm), "1m");
       transport.start(0.02);
@@ -421,6 +429,28 @@
   const drawing = scope.getContext("2d");
   const lights = [...document.querySelectorAll(".beat-light")];
   const scheduled = {id: null, graph: null};
+  const mutedTracks = new Set();
+
+  function toggleTrack(name) {
+    if (!window.MarchArrangement.tracks.some(track => track.key === name)) return;
+    if (mutedTracks.has(name)) mutedTracks.delete(name);
+    else mutedTracks.add(name);
+    const voice = scheduled.graph?.voiceGains[name];
+    if (voice) voice.gain.setTargetAtTime(mutedTracks.has(name) ? 0 : 1, T.now(), 0.012);
+    paint();
+  }
+
+  // Pointer events cover both touch and mouse, only in the left track-label area.
+  scope.addEventListener("pointerdown", event => {
+    const rect = scope.getBoundingClientRect();
+    const name = window.MarchArrangement.trackAt(
+      event.clientX - rect.left, event.clientY - rect.top, rect.width, rect.height
+    );
+    if (name) {
+      event.preventDefault();
+      toggleTrack(name);
+    }
+  });
   let pendingTempo = null;
   let activeTempo = 80;
   let paintFrame = 0;
@@ -444,7 +474,7 @@
     activeTempo = Number(tempo.value);
     pendingTempo = null;
     transport.bpm.value = activeTempo;
-    scheduled.graph = createGraph(T.getContext().destination, null, outputLevel());
+    scheduled.graph = createGraph(T.getContext().destination, null, outputLevel(), [...mutedTracks]);
     scheduled.graph.audit = [];
     let bar = 0;
     scheduled.id = transport.scheduleRepeat(time => {
@@ -519,7 +549,7 @@
     // Musical ticks keep the playhead aligned when BPM changes.
     const step = Number.isFinite(ticks) && ppq > 0
       ? ticks / (ppq / 4) : transport.seconds * activeTempo / 60 * 4;
-    window.MarchArrangement.draw(drawing, {width, height, bpm: activeTempo, step, playing});
+    window.MarchArrangement.draw(drawing, {width, height, bpm: activeTempo, step, playing, muted: mutedTracks});
 
     const beatLength = 60 / activeTempo;
     const elapsed = ((transport.seconds % (2 * beatLength)) + (2 * beatLength)) % (2 * beatLength);
@@ -536,6 +566,7 @@
     renderOffline,
     get arrangement() { return window.MarchArrangement; },
     get scheduledNotes() { return scheduled.graph?.audit ?? []; },
+    get mutedTracks() { return [...mutedTracks]; },
     get transport() { return T.Transport; },
     get graph() { return scheduled.graph; },
     get activeTempo() { return activeTempo; }

@@ -23,6 +23,17 @@
   ];
   const ACCENTS = new Set([1, 4, 7, 9]);
   const cached = new Map();
+  const layout = (width, height) => ({
+    labelWidth: width < 570 ? Math.min(86, width * 0.31) : 120,
+    headerHeight: 29,
+    trackHeight: (height - 29 - 5) / TRACKS.length
+  });
+
+  function trackAt(x, y, width, height) {
+    const {labelWidth, headerHeight, trackHeight} = layout(width, height);
+    if (x < 0 || x > labelWidth || y < headerHeight || y >= height - 5) return null;
+    return TRACKS[Math.floor((y - headerHeight) / trackHeight)]?.key ?? null;
+  }
   let lastFrame = null;
   let frameCount = 0;
 
@@ -72,7 +83,7 @@
     return result;
   }
 
-  function draw(ctx, {width, height, bpm, step, playing}) {
+  function draw(ctx, {width, height, bpm, step, playing, muted = new Set()}) {
     const events = eventsFor(bpm);
     const plotBars = width < 570 ? 4 : 8;
     const period = PHRASE_BARS * STEPS_PER_BAR;
@@ -80,12 +91,9 @@
     const viewStartBar = Math.floor(current / (plotBars * STEPS_PER_BAR)) * plotBars;
     const viewStart = viewStartBar * STEPS_PER_BAR;
     const count = plotBars * STEPS_PER_BAR;
-    const labelWidth = width < 570 ? Math.min(86, width * 0.31) : 120;
+    const {labelWidth, headerHeight, trackHeight} = layout(width, height);
     const plotX = labelWidth + 6;
     const plotWidth = Math.max(1, width - plotX - 7);
-    const headerHeight = 29;
-    const trackHeight = (height - headerHeight - 5) / TRACKS.length;
-
     ctx.fillStyle = "#101113";
     ctx.fillRect(0, 0, width, height);
     ctx.fillStyle = "#191a1e";
@@ -112,6 +120,7 @@
     }
 
     TRACKS.forEach((track, index) => {
+      const enabled = !muted.has(track.key);
       const y = headerHeight + index * trackHeight;
       const end = y + trackHeight;
       ctx.fillStyle = index % 2 ? "#17191b" : "#1b1d20";
@@ -131,25 +140,36 @@
           }
         }
       }
-      const active = playing && instances.some(event => event.start <= current && event.start + event.length >= current);
+      const active = playing && enabled && instances.some(event => event.start <= current && event.start + event.length >= current);
       if (active) {
         ctx.fillStyle = "#343036";
         ctx.fillRect(0, y + 1, labelWidth, Math.max(0, trackHeight - 2));
       }
       ctx.font = "600 13px system-ui, sans-serif";
-      ctx.fillStyle = track.color;
+      ctx.fillStyle = enabled ? track.color : "#66676a";
       ctx.fillText(track.icon, 7, y + trackHeight / 2);
       ctx.font = width < 570 ? "11px system-ui, sans-serif" : "12px system-ui, sans-serif";
-      ctx.fillStyle = active ? "#fff9ef" : "#d1cec9";
+      ctx.fillStyle = enabled ? (active ? "#fff9ef" : "#d1cec9") : "#737477";
       ctx.fillText(track.label, 25, y + trackHeight / 2);
+      if (!enabled) {
+        // Muted labels and clips fade, but remain visible for quick re-enabling.
+        ctx.fillStyle = "#ff826e";
+        ctx.fillRect(0, y + 2, 3, Math.max(1, trackHeight - 4));
+        ctx.strokeStyle = "#8d6464";
+        ctx.beginPath();
+        ctx.moveTo(25, y + trackHeight / 2);
+        ctx.lineTo(Math.min(labelWidth - 6, 25 + ctx.measureText(track.label).width), y + trackHeight / 2);
+        ctx.stroke();
+      }
 
       for (const event of instances) {
         const left = plotX + Math.max(0, event.start - viewStart) / count * plotWidth;
         const right = plotX + Math.min(count, event.start + event.length - viewStart) / count * plotWidth;
         const blockWidth = Math.max(2.5, right - left);
         const blockHeight = Math.max(2, trackHeight - 7);
-        ctx.globalAlpha = active && event.start <= current && event.start + event.length >= current
-          ? 1 : 0.50 + 0.4 * Math.min(1, event.velocity);
+        ctx.globalAlpha = !enabled ? 0.13 :
+          active && event.start <= current && event.start + event.length >= current
+            ? 1 : 0.50 + 0.4 * Math.min(1, event.velocity);
         ctx.fillStyle = track.color;
         ctx.fillRect(left, y + 3.5, blockWidth, blockHeight);
       }
@@ -159,8 +179,9 @@
     const headX = plotX + (current - viewStart) / count * plotWidth;
     lastFrame = {
       frame: ++frameCount, step: current, playheadX: headX, playing,
+      mutedTracks: [...muted],
       viewStart, plotX, plotWidth, width, height,
-      activeTracks: TRACKS.filter(track => events[track.key].some(event => {
+      activeTracks: TRACKS.filter(track => !muted.has(track.key) && events[track.key].some(event => {
         for (const offset of [-period, 0, period]) {
           const start = event.start + offset;
           if (start <= current && start + event.length >= current) return true;
@@ -186,7 +207,7 @@
   }
 
   window.MarchArrangement = Object.freeze({
-    tracks: TRACKS, eventsFor, draw,
+    tracks: TRACKS, eventsFor, trackAt, draw,
     get lastFrame() { return lastFrame; }
   });
 })();

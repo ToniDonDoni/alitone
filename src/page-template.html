@@ -16,7 +16,7 @@
   .meter { color: var(--accent); font-size: 1.2rem; white-space: nowrap; }
   .deck { border: 1px solid var(--line); background: #191a1c; }
   .display { position: relative; border-bottom: 1px solid var(--line); background: #101113; }
-  canvas { display: block; width: 100%; height: clamp(330px, 55vw, 455px); }
+  canvas { display: block; width: 100%; height: clamp(330px, 55vw, 455px); touch-action: manipulation; cursor: pointer; }
   .display footer { display: flex; justify-content: space-between; gap: 12px; padding: 10px 16px; border-top: 1px solid #333439; color: var(--dim); font-size: .875rem; }
   .beats { display: inline-flex; align-items: center; gap: 7px; }
   .beat-light { width: 13px; height: 4px; background: #575253; }
@@ -45,7 +45,7 @@
   </header>
   <section class="deck" aria-label="Процедурный марш на Tone.js">
     <div class="display">
-      <canvas id="scope" role="img" aria-label="Дорожки инструментов с музыкальными событиями и линией воспроизведения"></canvas>
+      <canvas id="scope" role="img" aria-label="Дорожки инструментов и линия воспроизведения. Нажмите на название инструмента слева, чтобы включить или выключить звук."></canvas>
       <footer>
         <span id="status" role="status">Готово к запуску</span>
         <span class="beats" aria-hidden="true"><i class="beat-light"></i><i class="beat-light"></i></span>
@@ -59,7 +59,7 @@
       </div>
     </div>
   </section>
-  <p class="engine">Tone.js 15.1.22 · procedural instruments · offline playback</p>
+  <p class="engine">Нажми на инструмент слева, чтобы выключить или включить его. · Tone.js 15.1.22</p>
 </main>
 <!-- LICENSE_BLOCK -->
 <script>/* TONE_BUNDLE */</script>

@@ -90,6 +90,48 @@ try {
   await requireCondition("Tone.getContext().state === 'running' && MarchLab.graph && MarchLab.transport.state === 'started' && MarchLab.transport.timeSignature === 2 && document.querySelector('#status').textContent.includes('Играет')");
   await requireCondition("['MembraneSynth','NoiseSynth','Oscillator','MonoSynth','FMSynth','MetalSynth'].every(kind => Object.values(MarchLab.graph.instruments).some(instrument => instrument.name === kind))");
   await requireCondition("Boolean(MarchLab.graph.instruments.kick.output && MarchLab.graph.instruments.shell.output && MarchLab.graph.instruments.snare.output && MarchLab.graph.instruments.sub.output && MarchLab.graph.instruments.brass.output && MarchLab.graph.instruments.metal.output)");
+  // Real pointer input must mute a voice in the AUDIO graph, not only its canvas paint.
+  await requireCondition("MarchLab.mutedTracks.length === 0 && MarchLab.arrangement.tracks.every(track => MarchLab.graph.voiceGains[track.key].gain.value === 1)");
+  const clickTrack = async (name, useTouch = false) => {
+    const pos = await evaluate(`(() => {
+      const canvas = document.querySelector("#scope");
+      const rect = canvas.getBoundingClientRect();
+      const index = MarchArrangement.tracks.findIndex(track => track.key === ${JSON.stringify(name)});
+      const height = rect.height;
+      const trackHeight = (height - 29 - 5) / MarchArrangement.tracks.length;
+      const point = {x: rect.left + 12, y: rect.top + 29 + (index + 0.5) * trackHeight};
+      if (MarchArrangement.trackAt(12, point.y - rect.top, rect.width, height) !== ${JSON.stringify(name)}) {
+        throw new Error("Track hit testing failed");
+      }
+      return point;
+    })()`);
+    if (useTouch) {
+      await call("Input.dispatchTouchEvent", {type: "touchStart", touchPoints: [{x: pos.x, y: pos.y}]});
+      await call("Input.dispatchTouchEvent", {type: "touchEnd", touchPoints: []});
+    } else {
+      await call("Input.dispatchMouseEvent", {...pos, type: "mousePressed", button: "left", clickCount: 1});
+      await call("Input.dispatchMouseEvent", {...pos, type: "mouseReleased", button: "left", clickCount: 1});
+    }
+  };
+  await clickTrack("kick");
+  await delay(110);
+  await requireCondition("MarchLab.mutedTracks.includes('kick') && MarchLab.graph.voiceGains.kick.gain.value < 0.01 && MarchLab.graph.voiceGains.snare.gain.value > 0.99 && MarchArrangement.lastFrame.mutedTracks.includes('kick')");
+  const mutedPreview = await call("Page.captureScreenshot", {format: "png"});
+  fs.writeFileSync(path.join(renderDir, "kick-muted.png"), Buffer.from(mutedPreview.data, "base64"));
+  await clickTrack("kick");
+  await delay(110);
+  await requireCondition("!MarchLab.mutedTracks.includes('kick') && MarchLab.graph.voiceGains.kick.gain.value > 0.99 && !MarchArrangement.lastFrame.mutedTracks.includes('kick')");
+  await clickTrack("brass");
+  await delay(110);
+  await requireCondition("MarchLab.mutedTracks.includes('brass') && MarchLab.graph.voiceGains.brass.gain.value < 0.01 && MarchLab.graph.voiceGains.kick.gain.value > 0.99");
+  await clickTrack("brass");
+  await delay(110);
+  await requireCondition("MarchLab.mutedTracks.length === 0 && MarchLab.graph.voiceGains.brass.gain.value > 0.99");
+  // Clicking outside the left header does not mute any instrument.
+  await evaluate("document.querySelector('#scope').dispatchEvent(new PointerEvent('pointerdown', {clientX:document.querySelector('#scope').getBoundingClientRect().right-20,clientY:document.querySelector('#scope').getBoundingClientRect().top+65,bubbles:true}))");
+  await requireCondition("MarchLab.mutedTracks.length === 0");
+  console.log("Track mute/unmute via real mouse input passed; other tracks remain audible.");
+
   // Verify actual rendered canvas pixels, not just the value of Transport.ticks.
   // The moving #ff815e cursor must be visible in both screenshots.
   const visualState = `(() => {
@@ -168,6 +210,13 @@ try {
   }
   await call("Emulation.setDeviceMetricsOverride", {width: 320, height: 710, deviceScaleFactor: 1, mobile: true});
   await requireCondition("document.documentElement.scrollWidth === 320 && tempo.getBoundingClientRect().width > 110");
+  // A tap in the mobile track header must toggle the same audio gain.
+  await clickTrack("snare", true);
+  await requireCondition("MarchLab.mutedTracks.includes('snare') && MarchArrangement.lastFrame.mutedTracks.includes('snare')");
+  await clickTrack("snare", true);
+  await requireCondition("MarchLab.mutedTracks.length === 0");
+  console.log("Mobile touch mute/unmute passed.");
+
   if (pageErrors.length) throw new Error("Browser exceptions: " + JSON.stringify(pageErrors));
   if (requests.some(url => !["file:", "blob:", "data:"].some(protocol => url.startsWith(protocol)))) throw new Error("Unexpected network request: " + requests.join(", "));
   console.log("Offline HTML load, Tone.js instruments, play/stop, mute, 80→108 BPM bar-boundary change, slider bounds, and 320px layout passed.");
@@ -175,6 +224,22 @@ try {
 
   const noiseProbe = await evaluate(`(async()=>{const result=await Tone.Offline(()=>{const noise=new Tone.NoiseSynth({noise:{type:"white"},envelope:{attack:0.001,decay:0.2,sustain:0,release:0.01}});noise.connect(Tone.getContext().destination);noise.triggerAttackRelease(0.2,0.05,1)},0.5,2,48000);const b=result.get();let peak=0;for(let channel=0;channel<b.numberOfChannels;channel++){const data=b.getChannelData(channel);for(let i=0;i<data.length;i++)peak=Math.max(peak,Math.abs(data[i]))}return peak})()`);
   console.log("isolated Tone.NoiseSynth probe peak", noiseProbe);
+
+  // An isolated muted voice must generate silence, not only a zero-valued UI flag.
+  const mutedAudio = await evaluate(`(async()=> {
+    async function peak(mutedTracks) {
+      const buffer = await MarchLab.renderOffline({bpm:80,bars:1,solo:"kick",mutedTracks,sampleRate:24000});
+      const channel = buffer.getChannelData(0);
+      let maximum = 0;
+      for (const sample of channel) maximum = Math.max(maximum, Math.abs(sample));
+      return maximum;
+    }
+    return {normal:await peak([]),muted:await peak(["kick"])};
+  })()`);
+  console.log("Isolated kick mute audio proof", mutedAudio);
+  if (!(mutedAudio.normal > 0.01 && mutedAudio.muted < 0.0001)) {
+    throw new Error("Muted kick voice still emitted audio: " + JSON.stringify(mutedAudio));
+  }
 
   const renderExpression = (bpm, bars, solo) => `(async()=>{const buffer=await MarchLab.renderOffline({bpm:${bpm},bars:${bars},solo:${solo ? JSON.stringify(solo) : "null"},sampleRate:48000});const left=buffer.getChannelData(0),right=buffer.getChannelData(1);const pcm=new Float32Array(left.length*2);let peak=0;for(let i=0;i<left.length;i++){pcm[i*2]=left[i];pcm[i*2+1]=right[i];peak=Math.max(peak,Math.abs(left[i]),Math.abs(right[i]));}const bytes=new Uint8Array(pcm.buffer);let chunks=[];for(let i=0;i<bytes.length;i+=16384)chunks.push(String.fromCharCode(...bytes.subarray(i,i+16384)));return {data:btoa(chunks.join('')),peak,length:left.length}})()`;
   for (const [bpm, bars, solo, filename] of [
