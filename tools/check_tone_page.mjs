@@ -78,7 +78,9 @@ try {
   await requireCondition("Boolean(window.MarchInstruments) && Object.keys(MarchInstruments).length === 12 && MarchInstruments.Kick.prototype instanceof Tone.MembraneSynth && MarchInstruments.Beater.prototype instanceof Tone.NoiseSynth && MarchInstruments.SubBass.prototype instanceof Tone.MonoSynth && MarchInstruments.LowBrass.prototype instanceof Tone.FMSynth && MarchInstruments.MetalAccent.prototype instanceof Tone.MetalSynth");
   await requireCondition("MarchLab.arrangement === MarchArrangement && MarchArrangement.tracks.length === 12 && MarchArrangement.eventsFor(80).kick.length === 32 && MarchArrangement.eventsFor(80).roll.length === 32 && document.querySelector('#scope').getBoundingClientRect().height >= 330");
   await requireCondition("Boolean(MarchLab) && MarchLab.version === 'Tone.js 15.1.22' && Tone.version === '15.1.22' && Tone.MembraneSynth && Tone.NoiseSynth && Tone.MonoSynth && Tone.FMSynth && Tone.MetalSynth && Tone.Oscillator");
-  await requireCondition("tempo.type === 'range' && tempo.min === '40' && tempo.max === '160' && tempo.value === '80' && document.querySelector('#tempo-value').value === '80 BPM' && document.documentElement.scrollWidth === 1200");
+  console.log("Desktop UI state", await evaluate("JSON.stringify({width:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,tempo:tempo.value,tempoText:document.querySelector('#tempo-value').value,canvasHeight:document.querySelector('#scope').getBoundingClientRect().height})"));
+  await requireCondition("tempo.type === 'range' && tempo.min === '40' && tempo.max === '160' && tempo.value === '80' && document.querySelector('#tempo-value').value === '80 BPM'");
+  await requireCondition("document.documentElement.scrollWidth <= window.innerWidth");
   const preview = await call("Page.captureScreenshot", {format: "png"});
   fs.writeFileSync(path.join(os.tmpdir(), "march-tone-preview.png"), Buffer.from(preview.data, "base64"));
   const launch = await evaluate("(() => { const r = transport.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2} })()");
