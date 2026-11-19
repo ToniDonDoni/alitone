@@ -16,8 +16,8 @@
   .meter { color: var(--accent); font-size: 1.2rem; white-space: nowrap; }
   .deck { border: 1px solid var(--line); background: #191a1c; }
   .display { position: relative; border-bottom: 1px solid var(--line); background: #101113; }
-  canvas { display: block; width: 100%; height: clamp(150px, 31vw, 320px); }
-  .display footer { position: absolute; inset: auto 18px 15px; display: flex; justify-content: space-between; gap: 12px; color: var(--dim); font-size: .875rem; }
+  canvas { display: block; width: 100%; height: clamp(330px, 55vw, 455px); }
+  .display footer { display: flex; justify-content: space-between; gap: 12px; padding: 10px 16px; border-top: 1px solid #333439; color: var(--dim); font-size: .875rem; }
   .beats { display: inline-flex; align-items: center; gap: 7px; }
   .beat-light { width: 13px; height: 4px; background: #575253; }
   .beat-light.active { background: var(--accent); box-shadow: 0 0 12px #ff815e6e; }
@@ -34,7 +34,7 @@
   .volume input { width: clamp(62px, 10vw, 116px); }
   .engine { margin-top: 11px; color: #8e8985; font-size: .78rem; letter-spacing: .04em; }
   @media (max-width: 760px) { .controls { grid-template-columns: 1fr; gap: 14px; } .settings { justify-content: space-between; } }
-  @media (max-width: 510px) { header { align-items: start; } .settings { display: grid; grid-template-columns: 1fr; gap: 6px; } .slider input { width: 0; flex: 1; } }
+  @media (max-width: 510px) { canvas { height: 405px; } header { align-items: start; } .settings { display: grid; grid-template-columns: 1fr; gap: 6px; } .slider input { width: 0; flex: 1; } }
 </style>
 </head>
 <body>
@@ -45,7 +45,7 @@
   </header>
   <section class="deck" aria-label="Процедурный марш на Tone.js">
     <div class="display">
-      <canvas id="scope" aria-hidden="true"></canvas>
+      <canvas id="scope" role="img" aria-label="Дорожки инструментов с музыкальными событиями и линией воспроизведения"></canvas>
       <footer>
         <span id="status" role="status">Готово к запуску</span>
         <span class="beats" aria-hidden="true"><i class="beat-light"></i><i class="beat-light"></i></span>
@@ -64,6 +64,7 @@
 <!-- LICENSE_BLOCK -->
 <script>/* TONE_BUNDLE */</script>
 <script>/* INSTRUMENTS_SOURCE */</script>
+<script>/* ARRANGEMENT_SOURCE */</script>
 <script>/* MARCH_SOURCE */</script>
 </body>
 </html>

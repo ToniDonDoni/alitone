@@ -5,6 +5,7 @@
   const T = window.Tone;
   const I = window.MarchInstruments;
   if (!I) throw new Error("MarchInstruments must be loaded before march-tone.js");
+  if (!window.MarchArrangement) throw new Error("MarchArrangement must be loaded before march-tone.js");
   const QUARTER_NOTES_PER_BAR = 2;
   const BARS_PER_PHRASE = 16;
   const BASS_ACCENTS = new Set([1, 4, 7, 9]);
@@ -401,8 +402,6 @@
   const scope = document.querySelector("#scope");
   const drawing = scope.getContext("2d");
   const lights = [...document.querySelectorAll(".beat-light")];
-  const scopeAnalyser = new T.Analyser("waveform", 1024);
-  scopeAnalyser.connect(T.getContext().destination);
   const scheduled = {id: null, graph: null};
   let pendingTempo = null;
   let activeTempo = 80;
@@ -427,7 +426,7 @@
     activeTempo = Number(tempo.value);
     pendingTempo = null;
     transport.bpm.value = activeTempo;
-    scheduled.graph = createGraph(scopeAnalyser, null, outputLevel());
+    scheduled.graph = createGraph(T.getContext().destination, null, outputLevel());
     let bar = 0;
     scheduled.id = transport.scheduleRepeat(time => {
       if (pendingTempo !== null) {
@@ -488,38 +487,21 @@
       scope.height = Math.round(height * scale);
     }
     drawing.setTransform(scale, 0, 0, scale, 0, 0);
-    drawing.clearRect(0, 0, width, height);
-    drawing.strokeStyle = "#302d2c";
-    drawing.lineWidth = 1;
-    drawing.beginPath();
-    for (let index = 1; index < 16; index++) {
-      drawing.moveTo(width * index / 16, 0);
-      drawing.lineTo(width * index / 16, height);
-    }
-    drawing.stroke();
+
     const transport = T.Transport;
-    const inPlayback = Boolean(scheduled.graph) && transport.state === "started";
+    const playing = Boolean(scheduled.graph) && transport.state === "started";
+    const ppq = Number(transport.PPQ);
+    const ticks = Number(transport.ticks);
+    // Musical ticks keep the playhead aligned when BPM changes.
+    const step = Number.isFinite(ticks) && ppq > 0
+      ? ticks / (ppq / 4) : transport.seconds * activeTempo / 60 * 4;
+    window.MarchArrangement.draw(drawing, {width, height, bpm: activeTempo, step, playing});
+
     const beatLength = 60 / activeTempo;
     const elapsed = ((transport.seconds % (2 * beatLength)) + (2 * beatLength)) % (2 * beatLength);
-    const beat = inPlayback ? Math.floor(elapsed / beatLength) : -1;
+    const beat = playing ? Math.floor(elapsed / beatLength) : -1;
     lights.forEach((light, index) => light.classList.toggle("active", index === beat));
-    drawing.strokeStyle = inPlayback ? "#ff815e" : "#77524b";
-    drawing.lineWidth = 1.6;
-    drawing.beginPath();
-    const values = scopeAnalyser.getValue();
-    if (inPlayback && values && values.length) {
-      for (let index = 0; index < values.length; index += 2) {
-        const x = width * index / (values.length - 1);
-        const y = height * 0.48 - Number(values[index]) * height * 0.62;
-        if (index === 0) drawing.moveTo(x, y);
-        else drawing.lineTo(x, y);
-      }
-    } else {
-      drawing.moveTo(0, height * 0.48);
-      drawing.lineTo(width, height * 0.48);
-    }
-    drawing.stroke();
-    if (inPlayback) paintFrame = requestAnimationFrame(paint);
+    if (playing) paintFrame = requestAnimationFrame(paint);
   }
 
   window.addEventListener("resize", paint);
@@ -528,6 +510,7 @@
     version: "Tone.js 15.1.22",
     patches: PATCHES,
     renderOffline,
+    get arrangement() { return window.MarchArrangement; },
     get transport() { return T.Transport; },
     get graph() { return scheduled.graph; },
     get activeTempo() { return activeTempo; }
