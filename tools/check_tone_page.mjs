@@ -90,6 +90,59 @@ try {
   await requireCondition("Tone.getContext().state === 'running' && MarchLab.graph && MarchLab.transport.state === 'started' && MarchLab.transport.timeSignature === 2 && document.querySelector('#status').textContent.includes('Играет')");
   await requireCondition("['MembraneSynth','NoiseSynth','Oscillator','MonoSynth','FMSynth','MetalSynth'].every(kind => Object.values(MarchLab.graph.instruments).some(instrument => instrument.name === kind))");
   await requireCondition("Boolean(MarchLab.graph.instruments.kick.output && MarchLab.graph.instruments.shell.output && MarchLab.graph.instruments.snare.output && MarchLab.graph.instruments.sub.output && MarchLab.graph.instruments.brass.output && MarchLab.graph.instruments.metal.output)");
+  // Verify actual rendered canvas pixels, not just the value of Transport.ticks.
+  // The moving #ff815e cursor must be visible in both screenshots.
+  const visualState = `(() => {
+    const frame = MarchArrangement.lastFrame;
+    const canvas = document.querySelector("#scope");
+    const context = canvas.getContext("2d");
+    const x = Math.round(frame.playheadX * canvas.width / frame.width);
+    const y = Math.round(canvas.height * 0.6);
+    const pixels = [];
+    for (let dx = -2; dx <= 2; dx++) {
+      const rgba = context.getImageData(Math.max(0, x + dx), y, 1, 1).data;
+      pixels.push([rgba[0], rgba[1], rgba[2]]);
+    }
+    return {
+      frame, transportSeconds: MarchLab.transport.seconds,
+      transportTicks: MarchLab.transport.ticks,
+      pixelOnCursor: pixels.some(rgb => rgb[0] > 200 && rgb[0] > rgb[1] * 1.35 && rgb[1] > rgb[2])
+    };
+  })()`;
+  const visualBefore = await evaluate(visualState);
+  const beforeImage = await call("Page.captureScreenshot", {format: "png"});
+  fs.writeFileSync(path.join(renderDir, "playhead-before.png"), Buffer.from(beforeImage.data, "base64"));
+  await delay(850);
+  const visualAfter = await evaluate(visualState);
+  const afterImage = await call("Page.captureScreenshot", {format: "png"});
+  fs.writeFileSync(path.join(renderDir, "playhead-after.png"), Buffer.from(afterImage.data, "base64"));
+  console.log("Playhead frames and pixels", JSON.stringify({before: visualBefore, after: visualAfter}));
+  if (!visualBefore.pixelOnCursor || !visualAfter.pixelOnCursor) {
+    throw new Error("Playhead is missing from actual rendered canvas pixels");
+  }
+  if (visualAfter.frame.frame - visualBefore.frame.frame < 8) {
+    throw new Error("Playhead canvas stopped repainting");
+  }
+  if (visualAfter.frame.playheadX - visualBefore.frame.playheadX < 10) {
+    throw new Error("Playhead visually did not move despite transport playback");
+  }
+  if (visualAfter.transportSeconds - visualBefore.transportSeconds < 0.40) {
+    throw new Error("Tone.Transport audio clock did not advance with playhead");
+  }
+  const match = await evaluate(`(() => {
+    const events = MarchArrangement.eventsFor(80);
+    const actual = MarchLab.scheduledNotes.filter(event => event.bar === 0);
+    const mismatches = actual.filter(event => !events[event.name]?.some(shape =>
+      Math.abs(shape.start - event.start) < 0.025 &&
+      Math.abs(shape.length - event.length) < 0.025
+    ));
+    return {count: actual.length, voices: [...new Set(actual.map(event => event.name))], mismatches};
+  })()`);
+  console.log("Scheduled audio triggers vs displayed clips", JSON.stringify(match));
+  if (match.count < 17 || match.voices.length < 9 || match.mismatches.length) {
+    throw new Error("Visual instrument clips differ from actual scheduled audio events: " + JSON.stringify(match));
+  }
+
   await evaluate("tempo.value='108'; tempo.dispatchEvent(new Event('input',{bubbles:true}))");
   await requireCondition("MarchLab.activeTempo === 80 && document.querySelector('#tempo-value').value === '108 BPM'");
   await delay(1750);

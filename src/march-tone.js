@@ -334,9 +334,22 @@
     const step = beat / 4;
     const random = seeded(Math.imul(index + 1, 2654435761));
     const drums = graph.instruments;
+    // Audit real note triggers, not the visualization's duplicated event list.
+    const record = (name, when, seconds) => {
+      if (!graph.audit) return;
+      graph.audit.push({
+        name, bar,
+        start: bar * 8 + (when - time) / step,
+        length: seconds / step,
+        audioTime: when
+      });
+      if (graph.audit.length > 512) graph.audit.splice(0, graph.audit.length - 512);
+    };
     const place = (name, offset, length, velocity, pan = 0, lag = 0) => {
-      if (name === "roll") strikeRoll(graph, time + offset * step + lag, length, velocity, pan);
-      else hit(graph, random, name, length, time + offset * step + lag, velocity, pan);
+      const when = time + offset * step + lag;
+      record(name, when, typeof length === "object" ? length.seconds : length);
+      if (name === "roll") strikeRoll(graph, when, length, velocity);
+      else hit(graph, random, name, length, when, velocity, pan);
     };
 
     for (let foot = 0; foot < 2; foot++) {
@@ -349,10 +362,15 @@
       graph.panners.kick.pan.setValueAtTime(side * 0.30, at);
       graph.panners.shell.pan.setValueAtTime(side * 0.30, at + 0.052);
       graph.panners.snareBody.pan.setValueAtTime(side, at);
+      record("kick", at, 0.060);
       drums.kick.triggerAttackRelease(PATCHES.kick.targetHz, 0.060, at, clamp(weight * variation, 0.02, 1));
+      record("beater", at, PATCHES.kick.noiseDecay);
       drums.beater.triggerAttackRelease(PATCHES.kick.noiseDecay, at, clamp(weight, 0.02, 1));
+      record("kickBody", at, PATCHES.kick.bodyDecay);
       drums.kickBody.triggerAttackRelease(PATCHES.kick.bodyDecay, at, clamp(weight * PATCHES.kick.bodyVelocity * variation, 0.02, 1));
+      record("shell", at + 0.052, PATCHES.kick.shellFadeBeats * beat);
       strikeShell(graph, at + 0.052, beat, weight * 0.9);
+      record("snareBody", at, 0.045);
       drums.snareBody.triggerAttackRelease(140, 0.045, at, clamp(weight * 0.55, 0.02, 1));
       place("snare", offset, 0.034, weight, side);
       place("snare", offset, 0.027, weight * 0.65, -side * 1.6, 0.012);
@@ -427,6 +445,7 @@
     pendingTempo = null;
     transport.bpm.value = activeTempo;
     scheduled.graph = createGraph(T.getContext().destination, null, outputLevel());
+    scheduled.graph.audit = [];
     let bar = 0;
     scheduled.id = transport.scheduleRepeat(time => {
       if (pendingTempo !== null) {
@@ -440,7 +459,8 @@
     button.textContent = "Остановить марш";
     button.setAttribute("aria-pressed", "true");
     status.textContent = "Играет · Tone.js";
-    paint();
+    cancelAnimationFrame(paintFrame);
+    paintFrame = requestAnimationFrame(paint);
   }
 
   function stopMarch() {
@@ -454,6 +474,7 @@
     button.setAttribute("aria-pressed", "false");
     status.textContent = "Остановлено";
     cancelAnimationFrame(paintFrame);
+    paintFrame = 0;
     paint();
   }
 
@@ -489,7 +510,10 @@
     drawing.setTransform(scale, 0, 0, scale, 0, 0);
 
     const transport = T.Transport;
-    const playing = Boolean(scheduled.graph) && transport.state === "started";
+    // Continue requesting frames while the graph is armed: Tone.start("+0.03")
+    // can leave transport.state stopped until its scheduled start time.
+    const armed = Boolean(scheduled.graph);
+    const playing = armed && transport.state === "started";
     const ppq = Number(transport.PPQ);
     const ticks = Number(transport.ticks);
     // Musical ticks keep the playhead aligned when BPM changes.
@@ -501,7 +525,7 @@
     const elapsed = ((transport.seconds % (2 * beatLength)) + (2 * beatLength)) % (2 * beatLength);
     const beat = playing ? Math.floor(elapsed / beatLength) : -1;
     lights.forEach((light, index) => light.classList.toggle("active", index === beat));
-    if (playing) paintFrame = requestAnimationFrame(paint);
+    if (armed) paintFrame = requestAnimationFrame(paint);
   }
 
   window.addEventListener("resize", paint);
@@ -511,6 +535,7 @@
     patches: PATCHES,
     renderOffline,
     get arrangement() { return window.MarchArrangement; },
+    get scheduledNotes() { return scheduled.graph?.audit ?? []; },
     get transport() { return T.Transport; },
     get graph() { return scheduled.graph; },
     get activeTempo() { return activeTempo; }

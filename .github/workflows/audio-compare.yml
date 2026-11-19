@@ -64,6 +64,7 @@ jobs:
           name: march-revised-tone-audio
           path: |
             output/renders/*.f32
+            output/renders/*.png
             output/analysis/*
             references/march-of-the-fallen-tone.html
           if-no-files-found: warn

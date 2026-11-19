@@ -23,6 +23,8 @@
   ];
   const ACCENTS = new Set([1, 4, 7, 9]);
   const cached = new Map();
+  let lastFrame = null;
+  let frameCount = 0;
 
   function eventsFor(bpm) {
     const tempo = Number(bpm);
@@ -155,6 +157,17 @@
     });
 
     const headX = plotX + (current - viewStart) / count * plotWidth;
+    lastFrame = {
+      frame: ++frameCount, step: current, playheadX: headX, playing,
+      viewStart, plotX, plotWidth, width, height,
+      activeTracks: TRACKS.filter(track => events[track.key].some(event => {
+        for (const offset of [-period, 0, period]) {
+          const start = event.start + offset;
+          if (start <= current && start + event.length >= current) return true;
+        }
+        return false;
+      })).map(track => track.key)
+    };
     if (headX >= plotX && headX <= plotX + plotWidth) {
       ctx.strokeStyle = "#ff815e";
       ctx.lineWidth = 2;
@@ -172,5 +185,8 @@
     }
   }
 
-  window.MarchArrangement = Object.freeze({tracks: TRACKS, eventsFor, draw});
+  window.MarchArrangement = Object.freeze({
+    tracks: TRACKS, eventsFor, draw,
+    get lastFrame() { return lastFrame; }
+  });
 })();
